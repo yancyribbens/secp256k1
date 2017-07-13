@@ -218,26 +218,10 @@ int secp256k1_aggsig_combine_signatures(const secp256k1_context* ctx, secp256k1_
     return 1;
 }
 
-#ifdef USE_ENDOMORPHISM
-SECP256K1_INLINE static void secp256k1_aggsig_endo_split(secp256k1_scalar *s1, secp256k1_scalar *s2, secp256k1_gej *p1, secp256k1_gej *p2) {
-    secp256k1_scalar tmp = *s1;
-    secp256k1_scalar_split_lambda(s1, s2, &tmp);
-    secp256k1_gej_mul_lambda(p2, p1);
-
-    if (secp256k1_scalar_is_high(s1)) {
-        secp256k1_scalar_negate(s1, s1);
-        secp256k1_gej_neg(p1, p1);
-    }
-    if (secp256k1_scalar_is_high(s2)) {
-        secp256k1_scalar_negate(s2, s2);
-        secp256k1_gej_neg(p2, p2);
-    }
-}
-#endif
-
 int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *sig64, const unsigned char *msg32, const secp256k1_pubkey *pubkeys, size_t n_pubkeys) {
     secp256k1_gej pt[SECP256K1_ECMULT_MULTI_MAX_N];
     secp256k1_scalar sc[SECP256K1_ECMULT_MULTI_MAX_N];
+    secp256k1_scalar g_sc;
     secp256k1_gej pk_sum;
     secp256k1_fe fe_tmp;
     secp256k1_ge r_ge;
@@ -257,14 +241,13 @@ int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *s
         return 0;
     }
 
-    /* Compute sum sG - e_i*P_i, which should be R */
-    secp256k1_gej_set_infinity(&pk_sum);
-    secp256k1_scalar_set_b32(&sc[0], sig64, &overflow);
+    /* extract s */
+    secp256k1_scalar_set_b32(&g_sc, sig64, &overflow);
     if (overflow) {
         return 0;
     }
-    secp256k1_gej_set_ge(&pt[0], &secp256k1_ge_const_g);
 
+    /* extract R */
     if (!secp256k1_fe_set_b32(&fe_tmp, sig64 + 32)) {
         return 0;
     }
@@ -273,40 +256,14 @@ int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *s
     }
     secp256k1_compute_prehash(ctx, prehash, pubkeys, n_pubkeys, &r_ge, msg32);
 
+    /* Compute sum sG - e_i*P_i, which should be R */
+    secp256k1_gej_set_infinity(&pk_sum);
     i = 0;
-#ifdef USE_ENDOMORPHISM
-    secp256k1_aggsig_endo_split(&sc[0], &sc[1], &pt[0], &pt[1]);
-    offset = 2;
-    while (i < n_pubkeys) {
-        size_t n = (2*(n_pubkeys - i) < SECP256K1_ECMULT_MULTI_MAX_N - offset) ? 2*(n_pubkeys - i) : SECP256K1_ECMULT_MULTI_MAX_N - offset;
-        size_t j;
-        secp256k1_gej multi;
-
-        /* TODO if n = 1 or 2 then we should use `secp256k1_ecmult` (and require an appropriate ctx) */
-        for (j = 0; j < n/2; j++) {
-            if (secp256k1_compute_sighash(&sc[2*j + offset], prehash, i + j) == 0) {
-                return 0;
-            }
-            secp256k1_scalar_negate(&sc[2*j + offset], &sc[2*j + offset]);
-            secp256k1_pubkey_load(ctx, &ge_tmp, &pubkeys[i + j]);
-            secp256k1_gej_set_ge(&pt[2*j + offset], &ge_tmp);
-
-            secp256k1_aggsig_endo_split(&sc[2*j + offset], &sc[2*j + 1 + offset], &pt[2*j + offset], &pt[2*j + 1 + offset]);
-        }
-        secp256k1_ecmult_multi(&multi, sc, pt, n + offset);
-        secp256k1_gej_add_var(&pk_sum, &pk_sum, &multi, NULL);
-
-        i += n / 2;
-        offset = 0;
-    }
-#else
-    offset = 1;
     while (i < n_pubkeys) {
         size_t n = (n_pubkeys - i < SECP256K1_ECMULT_MULTI_MAX_N - offset) ? n_pubkeys - i : SECP256K1_ECMULT_MULTI_MAX_N - offset;
         size_t j;
         secp256k1_gej multi;
 
-        /* TODO if n = 1 or 2 then we should use `secp256k1_ecmult` (and require an appropriate ctx) */
         for (j = 0; j < n; j++) {
             if (secp256k1_compute_sighash(&sc[j + offset], prehash, i + j) == 0) {
                 return 0;
@@ -315,13 +272,15 @@ int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *s
             secp256k1_pubkey_load(ctx, &ge_tmp, &pubkeys[i + j]);
             secp256k1_gej_set_ge(&pt[j + offset], &ge_tmp);
         }
-        secp256k1_ecmult_multi(&multi, sc, pt, n + offset);
+        secp256k1_ecmult_multi(&multi, sc, pt, &g_sc, n + offset);
         secp256k1_gej_add_var(&pk_sum, &pk_sum, &multi, NULL);
 
+        if (i == 0) {
+            secp256k1_scalar_set_int(&g_sc, 0);
+        }
         i += n;
         offset = 0;
     }
-#endif
 
     secp256k1_ge_neg(&r_ge, &r_ge);
     secp256k1_gej_add_ge_var(&pk_sum, &pk_sum, &r_ge, NULL);

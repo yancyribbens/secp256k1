@@ -136,7 +136,7 @@ SECP256K1_INLINE static unsigned char secp256k1_heap_remove(secp256k1_scalar_hea
 }
 
 /** Multi-multiply: R = sum_i ni * Ai */
-static void secp256k1_ecmult_multi(secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t n) {
+static void secp256k1_ecmult_multi_bos_coster(secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t n) {
     secp256k1_scalar_heap heap;
     unsigned char first, second;
 
@@ -194,5 +194,59 @@ static void secp256k1_ecmult_multi(secp256k1_gej *r, secp256k1_scalar *sc, secp2
         }
         secp256k1_gej_double_var(&pt[first], &pt[first], NULL);
     }
+}
+
+#ifdef USE_ENDOMORPHISM
+SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, secp256k1_scalar *s2, secp256k1_gej *p1, secp256k1_gej *p2) {
+    secp256k1_scalar tmp = *s1;
+    secp256k1_scalar_split_lambda(s1, s2, &tmp);
+    secp256k1_gej_mul_lambda(p2, p1);
+
+    if (secp256k1_scalar_is_high(s1)) {
+        secp256k1_scalar_negate(s1, s1);
+        secp256k1_gej_neg(p1, p1);
+    }
+    if (secp256k1_scalar_is_high(s2)) {
+        secp256k1_scalar_negate(s2, s2);
+        secp256k1_gej_neg(p2, p2);
+    }
+}
+#endif
+
+static void secp256k1_ecmult_multi(secp256k1_gej *r, const secp256k1_scalar *inp_sc, const secp256k1_gej *inp_pt, const secp256k1_scalar *inp_g_sc, size_t n) {
+    secp256k1_gej tmp;
+    secp256k1_gej pt[SECP256K1_ECMULT_MULTI_MAX_N + 1];  /* +1 in case we spill over doing the endomorphism 2 points at a time */
+    secp256k1_scalar sc[SECP256K1_ECMULT_MULTI_MAX_N + 1];
+    size_t idx = 0;
+
+    sc[0] = *inp_g_sc;
+    secp256k1_gej_set_ge(&pt[0], &secp256k1_ge_const_g);
+    idx++;
+    n++;
+#ifdef USE_ENDOMORPHISM
+    secp256k1_ecmult_endo_split(&sc[0], &sc[1], &pt[0], &pt[1]);
+    idx++;
+    n *= 2;
+#endif
+
+    secp256k1_gej_set_infinity(r);
+    while (idx < n) {
+        sc[idx] = *inp_sc++;
+        pt[idx] = *inp_pt++;
+#ifdef USE_ENDOMORPHISM
+        secp256k1_ecmult_endo_split(&sc[idx], &sc[idx + 1], &pt[idx], &pt[idx + 1]);
+        idx += 2;
+#else
+        idx++;
+#endif
+        if (idx >= SECP256K1_ECMULT_MULTI_MAX_N) {
+            secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
+            secp256k1_gej_add_var(r, r, &tmp, NULL);
+            n -= idx;
+            idx = 0;
+        }
+    }
+    secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
+    secp256k1_gej_add_var(r, r, &tmp, NULL);
 }
 
