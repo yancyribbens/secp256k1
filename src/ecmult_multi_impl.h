@@ -7,13 +7,13 @@
 #include "ecmult_multi.h"
 
 typedef struct {
-    unsigned char tree[SECP256K1_ECMULT_MULTI_MAX_N];
+    uint32_t tree[SECP256K1_ECMULT_MULTI_MAX_N];
     const secp256k1_scalar *scalars;
     size_t size;
 } secp256k1_scalar_heap;
 
-static void secp256k1_sift_down(secp256k1_scalar_heap *heap, size_t node, unsigned char index) {
-    unsigned char child_index, other_index;
+static void secp256k1_sift_down(secp256k1_scalar_heap *heap, size_t node, uint32_t index) {
+    uint32_t child_index, other_index;
     size_t child, other, half_size = heap->size >> 1;
     const secp256k1_scalar *sc = heap->scalars;
 
@@ -45,9 +45,9 @@ static void secp256k1_sift_down(secp256k1_scalar_heap *heap, size_t node, unsign
     heap->tree[node] = index;
 }
 
-static void secp256k1_sift_up(secp256k1_scalar_heap *heap, size_t node, unsigned char index) {
+static void secp256k1_sift_up(secp256k1_scalar_heap *heap, size_t node, uint32_t index) {
     size_t parent;
-    unsigned char parent_index;
+    uint32_t parent_index;
     const secp256k1_scalar *sc = heap->scalars;
 
     while (node > 0) {
@@ -67,8 +67,8 @@ static void secp256k1_sift_up(secp256k1_scalar_heap *heap, size_t node, unsigned
     heap->tree[node] = index;
 }
 
-static void secp256k1_sift_floyd(secp256k1_scalar_heap *heap, size_t node, unsigned char index) {
-    unsigned char child_index, other_index;
+static void secp256k1_sift_floyd(secp256k1_scalar_heap *heap, size_t node, uint32_t index) {
+    uint32_t child_index, other_index;
     size_t child, other, half_size = heap->size >> 1;
     const secp256k1_scalar *sc = heap->scalars;
 
@@ -119,15 +119,15 @@ static void secp256k1_heap_initialize(secp256k1_scalar_heap *heap, const secp256
     secp256k1_heapify(heap);
 }
 
-SECP256K1_INLINE static unsigned char secp256k1_replace(secp256k1_scalar_heap *heap, unsigned char index) {
-    unsigned char result = heap->tree[0];
+SECP256K1_INLINE static uint32_t secp256k1_replace(secp256k1_scalar_heap *heap, uint32_t index) {
+    uint32_t result = heap->tree[0];
     VERIFY_CHECK(heap->size > 0);
     secp256k1_sift_floyd(heap, 0, index);
     return result;
 }
 
-SECP256K1_INLINE static unsigned char secp256k1_heap_remove(secp256k1_scalar_heap *heap) {
-    unsigned char result = heap->tree[0];
+SECP256K1_INLINE static uint32_t secp256k1_heap_remove(secp256k1_scalar_heap *heap) {
+    uint32_t result = heap->tree[0];
     VERIFY_CHECK(heap->size > 0);
     if (--heap->size > 0) {
         secp256k1_sift_down(heap, 0, heap->tree[heap->size]);
@@ -138,7 +138,7 @@ SECP256K1_INLINE static unsigned char secp256k1_heap_remove(secp256k1_scalar_hea
 /** Multi-multiply: R = sum_i ni * Ai */
 static void secp256k1_ecmult_multi_bos_coster(secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t n) {
     secp256k1_scalar_heap heap;
-    unsigned char first, second;
+    uint32_t first, second;
 
     secp256k1_gej_set_infinity(r);
     secp256k1_heap_initialize(&heap, sc, pt, n);
