@@ -213,40 +213,40 @@ SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, s
 }
 #endif
 
-static void secp256k1_ecmult_multi(secp256k1_gej *r, const secp256k1_scalar *inp_sc, const secp256k1_gej *inp_pt, const secp256k1_scalar *inp_g_sc, size_t n) {
+static int secp256k1_ecmult_multi(secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
     secp256k1_gej tmp;
     secp256k1_gej pt[SECP256K1_ECMULT_MULTI_MAX_N + 1];  /* +1 in case we spill over doing the endomorphism 2 points at a time */
     secp256k1_scalar sc[SECP256K1_ECMULT_MULTI_MAX_N + 1];
     size_t idx = 0;
+    size_t point_idx = 0;
 
     sc[0] = *inp_g_sc;
     secp256k1_gej_set_ge(&pt[0], &secp256k1_ge_const_g);
     idx++;
-    n++;
 #ifdef USE_ENDOMORPHISM
     secp256k1_ecmult_endo_split(&sc[0], &sc[1], &pt[0], &pt[1]);
     idx++;
-    n *= 2;
 #endif
 
     secp256k1_gej_set_infinity(r);
-    while (idx < n) {
-        sc[idx] = *inp_sc++;
-        pt[idx] = *inp_pt++;
+    while (point_idx < n) {
+        if (!cb(&sc[idx], &pt[idx], point_idx, cbdata)) {
+            return 0;
+        }
+        idx++;
 #ifdef USE_ENDOMORPHISM
-        secp256k1_ecmult_endo_split(&sc[idx], &sc[idx + 1], &pt[idx], &pt[idx + 1]);
-        idx += 2;
-#else
+        secp256k1_ecmult_endo_split(&sc[idx - 1], &sc[idx], &pt[idx - 1], &pt[idx]);
         idx++;
 #endif
         if (idx >= SECP256K1_ECMULT_MULTI_MAX_N) {
             secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
             secp256k1_gej_add_var(r, r, &tmp, NULL);
-            n -= idx;
             idx = 0;
         }
+        point_idx++;
     }
     secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
     secp256k1_gej_add_var(r, r, &tmp, NULL);
+    return 1;
 }
 

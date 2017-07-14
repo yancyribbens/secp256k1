@@ -182,6 +182,18 @@ void test_exhaustive_ecmult(const secp256k1_context *ctx, const secp256k1_ge *gr
     }
 }
 
+typedef struct {
+    secp256k1_scalar sc[2];
+    secp256k1_gej pt[2];
+} ecmult_multi_data;
+
+static int ecmult_multi_callback(secp256k1_scalar *sc, secp256k1_gej *pt, size_t idx, void *cbdata) {
+    ecmult_multi_data *data = (ecmult_multi_data*) cbdata;
+    *sc = data->sc[idx];
+    *pt = data->pt[idx];
+    return 1;
+}
+
 void test_exhaustive_ecmult_multi(const secp256k1_ge *group, const secp256k1_gej *groupj, int order) {
     int i, j, k, x, y;
     for (i = 0; i < order; i++) {
@@ -190,16 +202,16 @@ void test_exhaustive_ecmult_multi(const secp256k1_ge *group, const secp256k1_gej
                 for (x = 0; x < order; x++) {
                     for (y = 0; y < order; y++) {
                         secp256k1_gej tmp;
-                        secp256k1_scalar sc[3];
-                        secp256k1_gej pt[3];
+                        secp256k1_scalar g_sc;
+                        ecmult_multi_data data;
 
-                        secp256k1_scalar_set_int(&sc[0], i);
-                        secp256k1_scalar_set_int(&sc[1], j);
-                        secp256k1_scalar_set_int(&sc[2], k);
-                        pt[0] = groupj[x];
-                        pt[1] = groupj[y];
+                        secp256k1_scalar_set_int(&data.sc[0], i);
+                        secp256k1_scalar_set_int(&data.sc[1], j);
+                        secp256k1_scalar_set_int(&g_sc, k);
+                        data.pt[0] = groupj[x];
+                        data.pt[1] = groupj[y];
 
-                        secp256k1_ecmult_multi(&tmp, sc, pt, &sc[2], 2);
+                        secp256k1_ecmult_multi(&tmp, &g_sc, ecmult_multi_callback, &data, 2);
                         ge_equals_gej(&group[(i * x + j * y + k) % order], &tmp);
                     }
                 }

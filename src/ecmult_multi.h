@@ -16,7 +16,9 @@
 #define SECP256K1_ECMULT_MULTI_MAX_N	32
 #endif
 
-/** Multi-multiply: R = sum_i ni * Ai. Will trash the sc and pt arrays. */
-static void secp256k1_ecmult_multi(secp256k1_gej *r, const secp256k1_scalar *inp_sc, const secp256k1_gej *inp_pt, const secp256k1_scalar *inp_g_sc, size_t n);
+typedef int (secp256k1_ecmult_multi_callback)(secp256k1_scalar *sc, secp256k1_gej *pt, size_t idx, void *data);
+
+/** Multi-multiply: R = sum_i ni * Ai */
+static int secp256k1_ecmult_multi(secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n);
 
 #endif
