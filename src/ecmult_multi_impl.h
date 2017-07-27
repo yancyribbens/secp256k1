@@ -196,6 +196,70 @@ static void secp256k1_ecmult_multi_bos_coster(secp256k1_gej *r, secp256k1_scalar
     }
 }
 
+struct secp256k1_ecmult_point_state {
+    int wnaf_na[256];
+    int bits_na;
+    size_t input_pos;
+};
+
+static void secp256k1_ecmult_multi_pippenger(secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t num) {
+    struct secp256k1_ecmult_point_state state[SECP256K1_ECMULT_MULTI_MAX_N];
+    int bits = 0;
+    size_t np;
+    size_t no = 0;
+    int i;
+    int j;
+    int idx;
+    secp256k1_gej running_sum;
+    secp256k1_gej tmp;
+    secp256k1_gej buckets_pos[ECMULT_TABLE_SIZE(WINDOW_A)];
+    secp256k1_gej buckets_neg[ECMULT_TABLE_SIZE(WINDOW_A)];
+    int n;
+    for (np = 0; np < num; ++np) {
+        if (secp256k1_scalar_is_zero(&sc[np]) || secp256k1_gej_is_infinity(&pt[np])) {
+            continue;
+        }
+        state[no].input_pos = np;
+        state[no].bits_na = secp256k1_ecmult_wnaf(state[no].wnaf_na,     256, &sc[np],      WINDOW_A);
+        if (state[no].bits_na > bits) {
+            bits = state[no].bits_na;
+        }
+        no++;
+    }
+
+    secp256k1_gej_set_infinity(r);
+    for (i = bits - 1; i >= 0; i--) {
+        for(j = 0; j < ECMULT_TABLE_SIZE(WINDOW_A); j++) {
+            secp256k1_gej_set_infinity(&buckets_pos[j]);
+            secp256k1_gej_set_infinity(&buckets_neg[j]);
+        }
+        secp256k1_gej_double_var(r, r, NULL);
+
+        for (np = 0; np < no; ++np) {
+            if (i < state[np].bits_na && (n = state[np].wnaf_na[i])) {
+                /* printf("n: %d, ecmult_table_size %d\n", n, ECMULT_TABLE_SIZE(WINDOW_A)); */
+                if (n > 0) {
+                    idx = (n - 1)/2;
+                    secp256k1_gej_add_var(&buckets_pos[idx], &buckets_pos[idx], &pt[state[np].input_pos], NULL);
+                } else {
+                    idx = -(n + 1)/2;
+                    secp256k1_gej_add_var(&buckets_neg[idx], &buckets_neg[idx], &pt[state[np].input_pos], NULL);
+                }
+            }
+        }
+        secp256k1_gej_set_infinity(&running_sum);
+        for(j = ECMULT_TABLE_SIZE(WINDOW_A) - 1; j >= 0; j--) {
+            secp256k1_gej_add_var(r, r, &running_sum, NULL);
+
+            secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
+            secp256k1_gej_neg(&tmp, &buckets_neg[j]);
+            secp256k1_gej_add_var(&running_sum, &running_sum, &tmp, NULL);
+
+            secp256k1_gej_add_var(r, r, &running_sum, NULL);
+        }
+    }
+}
+
 #ifdef USE_ENDOMORPHISM
 SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, secp256k1_scalar *s2, secp256k1_gej *p1, secp256k1_gej *p2) {
     secp256k1_scalar tmp = *s1;
@@ -239,13 +303,13 @@ static int secp256k1_ecmult_multi(secp256k1_gej *r, const secp256k1_scalar *inp_
         idx++;
 #endif
         if (idx >= SECP256K1_ECMULT_MULTI_MAX_N) {
-            secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
+            secp256k1_ecmult_multi_pippenger(&tmp, sc, pt, idx);
             secp256k1_gej_add_var(r, r, &tmp, NULL);
             idx = 0;
         }
         point_idx++;
     }
-    secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
+    secp256k1_ecmult_multi_pippenger(&tmp, sc, pt, idx);
     secp256k1_gej_add_var(r, r, &tmp, NULL);
     return 1;
 }
