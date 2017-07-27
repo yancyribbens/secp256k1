@@ -210,6 +210,7 @@ static void secp256k1_ecmult_multi_pippenger(secp256k1_gej *r, secp256k1_scalar 
     int j;
     int idx;
     secp256k1_gej running_sum;
+    secp256k1_gej walking_sum;
     secp256k1_gej tmp;
     secp256k1_gej buckets_pos[ECMULT_TABLE_SIZE(WINDOW_A)];
     secp256k1_gej buckets_neg[ECMULT_TABLE_SIZE(WINDOW_A)];
@@ -247,15 +248,20 @@ static void secp256k1_ecmult_multi_pippenger(secp256k1_gej *r, secp256k1_scalar 
             }
         }
         secp256k1_gej_set_infinity(&running_sum);
-        for(j = ECMULT_TABLE_SIZE(WINDOW_A) - 1; j >= 0; j--) {
-            secp256k1_gej_add_var(r, r, &running_sum, NULL);
-
+        secp256k1_gej_set_infinity(&walking_sum);
+        for(j = ECMULT_TABLE_SIZE(WINDOW_A) - 1; j >= 1; j--) {
             secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
             secp256k1_gej_neg(&tmp, &buckets_neg[j]);
             secp256k1_gej_add_var(&running_sum, &running_sum, &tmp, NULL);
-
-            secp256k1_gej_add_var(r, r, &running_sum, NULL);
+            secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
         }
+
+        secp256k1_gej_double_var(&walking_sum, &walking_sum, NULL);
+        secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
+        secp256k1_gej_add_var(&walking_sum, &walking_sum, &buckets_pos[0], NULL);
+        secp256k1_gej_neg(&tmp, &buckets_neg[0]);
+        secp256k1_gej_add_var(&walking_sum, &walking_sum, &tmp, NULL);
+        secp256k1_gej_add_var(r, r, &walking_sum, NULL);
     }
 }
 
