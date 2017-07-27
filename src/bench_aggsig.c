@@ -49,7 +49,7 @@ int main(void) {
     unsigned char seed[32] = "this'll do for a seed i guess.";
     bench_aggsig_t data;
     data.ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
-    data.scratch = secp256k1_scratch_space_create(data.ctx, 1024, 4096);
+    data.scratch = secp256k1_scratch_space_create(data.ctx, 10000, 25000);
 
     for (i = 0; i < N_SIGNATURES; i++) {
         memcpy(&data.seckeys[i], seed, 32);

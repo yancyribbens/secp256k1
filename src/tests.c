@@ -2870,6 +2870,7 @@ void run_heap(void){
     secp256k1_scalar_heap heap;
     secp256k1_scalar sc[20];
     secp256k1_gej pt[20];
+    uint32_t tree[20];
     size_t i;
 
     unsigned char idx1, idx2;
@@ -2881,7 +2882,7 @@ void run_heap(void){
     random_group_element_test(&ptg);
     secp256k1_gej_set_ge(&pt[0], &ptg);
 
-    secp256k1_heap_initialize(&heap, sc, pt, 1);
+    secp256k1_heap_initialize(&heap, tree, sc, pt, 1);
     CHECK(heap.size == 1);
     secp256k1_heap_remove(&heap);
     CHECK(heap.size == 0);
@@ -2892,7 +2893,7 @@ void run_heap(void){
         random_group_element_test(&ptg);
         secp256k1_gej_set_ge(&pt[i], &ptg);
     }
-    secp256k1_heap_initialize(&heap, sc, pt, i);
+    secp256k1_heap_initialize(&heap, tree, sc, pt, i);
 
     idx1 = secp256k1_heap_remove(&heap);
     CHECK(heap.size == 19);
@@ -2913,7 +2914,7 @@ void run_heap(void){
         sc[i] = sc[i % 7];
         pt[i] = pt[i % 7];
     }
-    secp256k1_heap_initialize(&heap, sc, pt, i);
+    secp256k1_heap_initialize(&heap, tree, sc, pt, i);
 
     idx1 = secp256k1_heap_remove(&heap);
     CHECK(heap.size == 19);

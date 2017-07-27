@@ -141,14 +141,15 @@ void test_aggsig_api(void) {
     secp256k1_context_destroy(both);
 }
 
+#define N_KEYS 200
 void test_aggsig_onesigner(void) {
-    secp256k1_pubkey pubkeys[SECP256K1_ECMULT_MULTI_MAX_N * 5];
-    unsigned char seckeys[SECP256K1_ECMULT_MULTI_MAX_N * 5][32];
-    secp256k1_aggsig_partial_signature partials[SECP256K1_ECMULT_MULTI_MAX_N * 5];
+    secp256k1_pubkey pubkeys[N_KEYS];
+    unsigned char seckeys[N_KEYS][32];
+    secp256k1_aggsig_partial_signature partials[N_KEYS];
     const size_t n_pubkeys = sizeof(pubkeys) / sizeof(pubkeys[0]);
     secp256k1_scalar tmp_s;
     size_t i;
-    size_t n_signers[] = { 1, 2, SECP256K1_ECMULT_MULTI_MAX_N - 3, SECP256K1_ECMULT_MULTI_MAX_N, SECP256K1_ECMULT_MULTI_MAX_N + 1, SECP256K1_ECMULT_MULTI_MAX_N * 5 };
+    size_t n_signers[] = { 1, 2, N_KEYS / 5, N_KEYS - 1, N_KEYS };
     const size_t n_n_signers = sizeof(n_signers) / sizeof(n_signers[0]);
     secp256k1_scratch_space *scratch = secp256k1_scratch_space_create(ctx, 1024, 4096);
 
@@ -190,6 +191,7 @@ void test_aggsig_onesigner(void) {
 
     secp256k1_scratch_space_destroy(scratch);
 }
+#undef N_KEYS
 
 void run_aggsig_tests(void) {
     test_aggsig_api();

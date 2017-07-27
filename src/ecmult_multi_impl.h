@@ -7,7 +7,7 @@
 #include "ecmult_multi.h"
 
 typedef struct {
-    uint32_t tree[SECP256K1_ECMULT_MULTI_MAX_N];
+    uint32_t *tree;
     const secp256k1_scalar *scalars;
     size_t size;
 } secp256k1_scalar_heap;
@@ -102,11 +102,10 @@ SECP256K1_INLINE static void secp256k1_heapify(secp256k1_scalar_heap *heap) {
     }
 }
 
-static void secp256k1_heap_initialize(secp256k1_scalar_heap *heap, const secp256k1_scalar *scalars, const secp256k1_gej *pt, size_t n) {
+static void secp256k1_heap_initialize(secp256k1_scalar_heap *heap, uint32_t *tree, const secp256k1_scalar *scalars, const secp256k1_gej *pt, size_t n) {
     size_t i, size = 0;
 
-    VERIFY_CHECK(n <= SECP256K1_ECMULT_MULTI_MAX_N);
-
+    heap->tree = tree;
     for (i = 0; i < n; ++i) {
         if (!secp256k1_scalar_is_zero(&scalars[i]) && !secp256k1_gej_is_infinity(&pt[i])) {
             heap->tree[size++] = i;
@@ -136,12 +135,12 @@ SECP256K1_INLINE static uint32_t secp256k1_heap_remove(secp256k1_scalar_heap *he
 }
 
 /** Multi-multiply: R = sum_i ni * Ai */
-static void secp256k1_ecmult_multi_bos_coster(secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t n) {
+static void secp256k1_ecmult_multi_bos_coster(uint32_t *tree_space, secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t n) {
     secp256k1_scalar_heap heap;
     uint32_t first, second;
 
     secp256k1_gej_set_infinity(r);
-    secp256k1_heap_initialize(&heap, sc, pt, n);
+    secp256k1_heap_initialize(&heap, tree_space, sc, pt, n);
 
     if (heap.size == 0) {
         return;
@@ -214,11 +213,40 @@ SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, s
 #endif
 
 static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
+    const size_t entry_size = sizeof(secp256k1_gej) + sizeof(secp256k1_scalar) + sizeof(size_t);
+    const size_t max_entries = secp256k1_scratch_max_allocation(scratch) / entry_size;
+    /* Use n+2 with the endomorphism, n+1 without, when calculating batch sizes.
+     * The reason is that Bos-Coster requires we add the G scalar to the list of
+     * other scalars. */
+#ifdef USE_ENDOMORPHISM
+    const size_t n_batches = (n + max_entries + 1) / max_entries;
+    size_t entries_per_batch = (n + n_batches + 1) / n_batches;
+#else
+    const size_t n_batches = (n + max_entries) / max_entries;
+    size_t entries_per_batch = (n + n_batches) / n_batches;
+#endif
+
     secp256k1_gej tmp;
-    secp256k1_gej pt[SECP256K1_ECMULT_MULTI_MAX_N + 1];  /* +1 in case we spill over doing the endomorphism 2 points at a time */
-    secp256k1_scalar sc[SECP256K1_ECMULT_MULTI_MAX_N + 1];
+    secp256k1_gej *pt;
+    secp256k1_scalar *sc;
+    uint32_t *tree_space;
     size_t idx = 0;
     size_t point_idx = 0;
+
+    /* Attempt to allocate sufficient space for Bos-Coster */
+    while (!secp256k1_scratch_resize(scratch, error_callback, entries_per_batch * entry_size)) {
+        entries_per_batch /= 2;
+        if (entries_per_batch < 2) {
+            return 0;
+        }
+    }
+    secp256k1_scratch_reset(scratch);
+    pt = (secp256k1_gej *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*pt));
+    sc = (secp256k1_scalar *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*sc));
+    tree_space = (uint32_t *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*tree_space));
+    VERIFY_CHECK(pt != NULL);
+    VERIFY_CHECK(sc != NULL);
+    VERIFY_CHECK(tree_space != NULL);
 
     sc[0] = *inp_g_sc;
     secp256k1_gej_set_ge(&pt[0], &secp256k1_ge_const_g);
@@ -238,14 +266,14 @@ static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_ca
         secp256k1_ecmult_endo_split(&sc[idx - 1], &sc[idx], &pt[idx - 1], &pt[idx]);
         idx++;
 #endif
-        if (idx >= SECP256K1_ECMULT_MULTI_MAX_N) {
-            secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
+        if (idx >= entries_per_batch) {
+            secp256k1_ecmult_multi_bos_coster(tree_space, &tmp, sc, pt, idx);
             secp256k1_gej_add_var(r, r, &tmp, NULL);
             idx = 0;
         }
         point_idx++;
     }
-    secp256k1_ecmult_multi_bos_coster(&tmp, sc, pt, idx);
+    secp256k1_ecmult_multi_bos_coster(tree_space, &tmp, sc, pt, idx);
     secp256k1_gej_add_var(r, r, &tmp, NULL);
     return 1;
 }
