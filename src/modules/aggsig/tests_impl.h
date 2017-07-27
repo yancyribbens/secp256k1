@@ -15,6 +15,7 @@ void test_aggsig_api(void) {
     secp256k1_context *sign = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
     secp256k1_context *vrfy = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
     secp256k1_context *both = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    secp256k1_scratch_space *scratch = secp256k1_scratch_space_create(none, 1024, 4096);
     unsigned char seckeys[5][32];
     secp256k1_pubkey pubkeys[5];
     secp256k1_aggsig_partial_signature partials[5];
@@ -115,22 +116,25 @@ void test_aggsig_api(void) {
     CHECK(ecount == 15);
 
     memset(sig, 0, sizeof(sig));
-    CHECK(!secp256k1_aggsig_verify(none, sig, msg, pubkeys, 5));
+    CHECK(!secp256k1_aggsig_verify(none, scratch, sig, msg, pubkeys, 5));
     CHECK(secp256k1_aggsig_combine_signatures(none, aggctx, sig, partials, 5));
-    CHECK(!secp256k1_aggsig_verify(none, sig, msg, pubkeys, 4));
-    CHECK(!secp256k1_aggsig_verify(none, sig, msg, pubkeys, 0));
-    CHECK(secp256k1_aggsig_verify(none, sig, msg, pubkeys, 5));
+    CHECK(!secp256k1_aggsig_verify(none, scratch, sig, msg, pubkeys, 4));
+    CHECK(!secp256k1_aggsig_verify(none, scratch, sig, msg, pubkeys, 0));
+    CHECK(secp256k1_aggsig_verify(none, scratch, sig, msg, pubkeys, 5));
     CHECK(ecount == 15);
 
-    CHECK(!secp256k1_aggsig_verify(none, NULL, msg, pubkeys, 5));
+    CHECK(!secp256k1_aggsig_verify(none, NULL, sig, msg, pubkeys, 5));
     CHECK(ecount == 16);
-    CHECK(!secp256k1_aggsig_verify(none, sig, NULL, pubkeys, 5));
+    CHECK(!secp256k1_aggsig_verify(none, scratch, NULL, msg, pubkeys, 5));
     CHECK(ecount == 17);
-    CHECK(!secp256k1_aggsig_verify(none, sig, msg, NULL, 5));
+    CHECK(!secp256k1_aggsig_verify(none, scratch, sig, NULL, pubkeys, 5));
     CHECK(ecount == 18);
+    CHECK(!secp256k1_aggsig_verify(none, scratch, sig, msg, NULL, 5));
+    CHECK(ecount == 19);
 
     /* cleanup */
     secp256k1_aggsig_context_destroy(aggctx);
+    secp256k1_scratch_space_destroy(scratch);
     secp256k1_context_destroy(none);
     secp256k1_context_destroy(sign);
     secp256k1_context_destroy(vrfy);
@@ -146,6 +150,7 @@ void test_aggsig_onesigner(void) {
     size_t i;
     size_t n_signers[] = { 1, 2, SECP256K1_ECMULT_MULTI_MAX_N - 3, SECP256K1_ECMULT_MULTI_MAX_N, SECP256K1_ECMULT_MULTI_MAX_N + 1, SECP256K1_ECMULT_MULTI_MAX_N * 5 };
     const size_t n_n_signers = sizeof(n_signers) / sizeof(n_signers[0]);
+    secp256k1_scratch_space *scratch = secp256k1_scratch_space_create(ctx, 1024, 4096);
 
     unsigned char msg[32];
 
@@ -176,12 +181,14 @@ void test_aggsig_onesigner(void) {
             CHECK(secp256k1_aggsig_partial_sign(ctx, aggctx, &partials[j], msg, seckeys[j], j));
         }
         CHECK(secp256k1_aggsig_combine_signatures(ctx, aggctx, sig, partials, n_signers[i]));
-        CHECK(secp256k1_aggsig_verify(ctx, sig, msg, pubkeys, n_signers[i]));
+        CHECK(secp256k1_aggsig_verify(ctx, scratch, sig, msg, pubkeys, n_signers[i]));
         /* Make sure verification with 0 pubkeys fails without Bad Things happenings */
-        CHECK(!secp256k1_aggsig_verify(ctx, sig, msg, pubkeys, 0));
+        CHECK(!secp256k1_aggsig_verify(ctx, scratch, sig, msg, pubkeys, 0));
 
         secp256k1_aggsig_context_destroy(aggctx);
     }
+
+    secp256k1_scratch_space_destroy(scratch);
 }
 
 void run_aggsig_tests(void) {

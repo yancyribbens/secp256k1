@@ -16,6 +16,7 @@
 typedef struct {
     secp256k1_context *ctx;
     secp256k1_aggsig_context *aggctx;
+    secp256k1_scratch_space *scratch;
     unsigned char seckeys[N_SIGNATURES][32];
     secp256k1_pubkey pubkeys[N_SIGNATURES];
     secp256k1_aggsig_partial_signature partials[N_SIGNATURES];
@@ -27,7 +28,7 @@ void bench_aggsig(void* arg) {
     size_t i;
     bench_aggsig_t *data = (bench_aggsig_t*) arg;
     for (i = 0; i < 2000; i++) {
-        CHECK(secp256k1_aggsig_verify(data->ctx, data->sig, data->msg, data->pubkeys, N_SIGNATURES));
+        CHECK(secp256k1_aggsig_verify(data->ctx, data->scratch, data->sig, data->msg, data->pubkeys, N_SIGNATURES));
     }
 }
 
@@ -48,6 +49,7 @@ int main(void) {
     unsigned char seed[32] = "this'll do for a seed i guess.";
     bench_aggsig_t data;
     data.ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    data.scratch = secp256k1_scratch_space_create(data.ctx, 1024, 4096);
 
     for (i = 0; i < N_SIGNATURES; i++) {
         memcpy(&data.seckeys[i], seed, 32);
@@ -59,6 +61,7 @@ int main(void) {
     run_benchmark("aggsig_32", bench_aggsig, bench_aggsig_setup, NULL, &data, 1, 2000);
 
     secp256k1_aggsig_context_destroy(data.aggctx);
+    secp256k1_scratch_space_destroy(data.scratch);
     secp256k1_context_destroy(data.ctx);
     return 0;
 }

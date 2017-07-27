@@ -238,7 +238,7 @@ static int secp256k1_aggsig_verify_callback(secp256k1_scalar *sc, secp256k1_gej 
     return 1;
 }
 
-int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *sig64, const unsigned char *msg32, const secp256k1_pubkey *pubkeys, size_t n_pubkeys) {
+int secp256k1_aggsig_verify(const secp256k1_context* ctx, secp256k1_scratch_space *scratch, const unsigned char *sig64, const unsigned char *msg32, const secp256k1_pubkey *pubkeys, size_t n_pubkeys) {
     secp256k1_scalar g_sc;
     secp256k1_gej pk_sum;
     secp256k1_fe fe_tmp;
@@ -247,6 +247,7 @@ int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *s
     secp256k1_verify_callback_data cbdata;
 
     VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(scratch != NULL);
     ARG_CHECK(sig64 != NULL);
     ARG_CHECK(msg32 != NULL);
     ARG_CHECK(pubkeys != NULL);
@@ -276,7 +277,7 @@ int secp256k1_aggsig_verify(const secp256k1_context* ctx, const unsigned char *s
     secp256k1_compute_prehash(ctx, cbdata.prehash, pubkeys, n_pubkeys, &r_ge, msg32);
 
     /* Compute sum sG - e_i*P_i, which should be R */
-    if (!secp256k1_ecmult_multi(&pk_sum, &g_sc, secp256k1_aggsig_verify_callback, &cbdata, n_pubkeys)) {
+    if (!secp256k1_ecmult_multi(scratch, &ctx->error_callback, &pk_sum, &g_sc, secp256k1_aggsig_verify_callback, &cbdata, n_pubkeys)) {
         return 0;
     }
 
