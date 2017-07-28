@@ -215,12 +215,12 @@ SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, s
 static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
     const size_t entry_size = sizeof(secp256k1_gej) + sizeof(secp256k1_scalar) + sizeof(size_t);
     const size_t max_entries = secp256k1_scratch_max_allocation(scratch) / entry_size;
-    /* Use n+2 with the endomorphism, n+1 without, when calculating batch sizes.
-     * The reason is that Bos-Coster requires we add the G scalar to the list of
+    /* Use 2(n+1) with the endomorphism, n+1 without, when calculating batch sizes.
+     * The reason for +1 is that Bos-Coster requires we add the G scalar to the list of
      * other scalars. */
 #ifdef USE_ENDOMORPHISM
-    const size_t n_batches = (n + max_entries + 1) / max_entries;
-    size_t entries_per_batch = (n + n_batches + 1) / n_batches;
+    const size_t n_batches = (2*n + max_entries + 1) / max_entries;
+    size_t entries_per_batch = (2*n + n_batches + 1) / n_batches;
 #else
     const size_t n_batches = (n + max_entries) / max_entries;
     size_t entries_per_batch = (n + n_batches) / n_batches;
@@ -265,8 +265,10 @@ static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_ca
 #ifdef USE_ENDOMORPHISM
         secp256k1_ecmult_endo_split(&sc[idx - 1], &sc[idx], &pt[idx - 1], &pt[idx]);
         idx++;
-#endif
+        if (idx >= entries_per_batch - 1) {
+#else
         if (idx >= entries_per_batch) {
+#endif
             secp256k1_ecmult_multi_bos_coster(tree_space, &tmp, sc, pt, idx);
             secp256k1_gej_add_var(r, r, &tmp, NULL);
             idx = 0;
