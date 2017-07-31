@@ -5,6 +5,7 @@
  **********************************************************************/
 
 #include "ecmult_multi.h"
+#define WINDOW_A_ADJ WINDOW_A
 
 typedef struct {
     uint32_t *tree;
@@ -210,14 +211,14 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
     int idx;
     secp256k1_gej running_sum;
     secp256k1_gej tmp;
-    secp256k1_gej buckets_pos[ECMULT_TABLE_SIZE(WINDOW_A)];
+    secp256k1_gej buckets_pos[ECMULT_TABLE_SIZE(WINDOW_A_ADJ)];
     int n;
     for (np = 0; np < num; ++np) {
         if (secp256k1_scalar_is_zero(&sc[np]) || secp256k1_gej_is_infinity(&pt[np])) {
             continue;
         }
         state[no].input_pos = np;
-        state[no].bits_na = secp256k1_ecmult_wnaf(state[no].wnaf_na,     256, &sc[np],      WINDOW_A);
+        state[no].bits_na = secp256k1_ecmult_wnaf(state[no].wnaf_na,     256, &sc[np],      WINDOW_A_ADJ);
         if (state[no].bits_na > bits) {
             bits = state[no].bits_na;
         }
@@ -226,7 +227,7 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
 
     secp256k1_gej_set_infinity(r);
     for (i = bits - 1; i >= 0; i--) {
-        for(j = 0; j < ECMULT_TABLE_SIZE(WINDOW_A); j++) {
+        for(j = 0; j < ECMULT_TABLE_SIZE(WINDOW_A_ADJ); j++) {
             secp256k1_gej_set_infinity(&buckets_pos[j]);
         }
         secp256k1_gej_double_var(r, r, NULL);
@@ -244,7 +245,7 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
             }
         }
         secp256k1_gej_set_infinity(&running_sum);
-        for(j = ECMULT_TABLE_SIZE(WINDOW_A) - 1; j >= 0; j--) {
+        for(j = ECMULT_TABLE_SIZE(WINDOW_A_ADJ) - 1; j >= 0; j--) {
             secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
             secp256k1_gej_add_var(r, r, &running_sum, NULL);
             secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
