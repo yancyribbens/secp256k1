@@ -196,13 +196,12 @@ static void secp256k1_ecmult_multi_bos_coster(uint32_t *tree_space, secp256k1_ge
 }
 
 struct secp256k1_ecmult_point_state {
-    int wnaf_na[256];
+    int *wnaf_na;
     int bits_na;
     size_t input_pos;
 };
 
-static void secp256k1_ecmult_multi_pippenger(secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t num) {
-    struct secp256k1_ecmult_point_state state[SECP256K1_ECMULT_MULTI_MAX_N];
+static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state *state, secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t num) {
     int bits = 0;
     size_t np;
     size_t no = 0;
@@ -271,7 +270,7 @@ SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, s
 #endif
 
 static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
-    const size_t entry_size = sizeof(secp256k1_gej) + sizeof(secp256k1_scalar) + sizeof(size_t);
+    const size_t entry_size = sizeof(secp256k1_gej) + sizeof(secp256k1_scalar) + sizeof(struct secp256k1_ecmult_point_state) + 256 * sizeof(int);
     const size_t max_entries = secp256k1_scratch_max_allocation(scratch) / entry_size;
     /* Use 2(n+1) with the endomorphism, n+1 without, when calculating batch sizes.
      * The reason for +1 is that Bos-Coster requires we add the G scalar to the list of
@@ -287,9 +286,11 @@ static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_ca
     secp256k1_gej tmp;
     secp256k1_gej *pt;
     secp256k1_scalar *sc;
-    uint32_t *tree_space;
+    /*uint32_t *tree_space;*/
+    struct secp256k1_ecmult_point_state *state_space;
     size_t idx = 0;
     size_t point_idx = 0;
+    size_t i = 0;
 
     /* Attempt to allocate sufficient space for Bos-Coster */
     while (!secp256k1_scratch_resize(scratch, error_callback, entries_per_batch * entry_size)) {
@@ -301,10 +302,13 @@ static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_ca
     secp256k1_scratch_reset(scratch);
     pt = (secp256k1_gej *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*pt));
     sc = (secp256k1_scalar *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*sc));
-    tree_space = (uint32_t *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*tree_space));
+    state_space = (struct secp256k1_ecmult_point_state *) secp256k1_scratch_alloc(scratch, entries_per_batch * sizeof(*state_space));
+    for(i=0; i<entries_per_batch; i++) {
+        state_space[i].wnaf_na = (int *) secp256k1_scratch_alloc(scratch, 256 * sizeof(int));
+    }
     VERIFY_CHECK(pt != NULL);
     VERIFY_CHECK(sc != NULL);
-    VERIFY_CHECK(tree_space != NULL);
+    VERIFY_CHECK(state_space != NULL);
 
     sc[0] = *inp_g_sc;
     secp256k1_gej_set_ge(&pt[0], &secp256k1_ge_const_g);
@@ -327,13 +331,13 @@ static int secp256k1_ecmult_multi(secp256k1_scratch *scratch, const secp256k1_ca
 #else
         if (idx >= entries_per_batch) {
 #endif
-            secp256k1_ecmult_multi_pippenger(&tmp, sc, pt, idx);
+            secp256k1_ecmult_multi_pippenger(state_space, &tmp, sc, pt, idx);
             secp256k1_gej_add_var(r, r, &tmp, NULL);
             idx = 0;
         }
         point_idx++;
     }
-    secp256k1_ecmult_multi_pippenger(&tmp, sc, pt, idx);
+    secp256k1_ecmult_multi_pippenger(state_space, &tmp, sc, pt, idx);
     secp256k1_gej_add_var(r, r, &tmp, NULL);
     return 1;
 }
