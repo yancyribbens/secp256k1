@@ -11,7 +11,7 @@
 #include "util.h"
 #include "bench.h"
 
-#define N_SIGNATURES	30
+#define N_SIGNATURES	4096
 
 typedef struct {
     secp256k1_context *ctx;
@@ -27,7 +27,7 @@ typedef struct {
 void bench_aggsig(void* arg) {
     size_t i;
     bench_aggsig_t *data = (bench_aggsig_t*) arg;
-    for (i = 0; i < 2000; i++) {
+    for (i = 0; i < 200; i++) {
         CHECK(secp256k1_aggsig_verify(data->ctx, data->scratch, data->sig, data->msg, data->pubkeys, N_SIGNATURES));
     }
 }
@@ -49,7 +49,7 @@ int main(void) {
     unsigned char seed[32] = "this'll do for a seed i guess.";
     bench_aggsig_t data;
     data.ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
-    data.scratch = secp256k1_scratch_space_create(data.ctx, 10000, 25000);
+    data.scratch = secp256k1_scratch_space_create(data.ctx, 20000*N_SIGNATURES/30, 50000*N_SIGNATURES/30);
 
     for (i = 0; i < N_SIGNATURES; i++) {
         memcpy(&data.seckeys[i], seed, 32);
