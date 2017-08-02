@@ -5,7 +5,7 @@
  **********************************************************************/
 
 #include "ecmult_multi.h"
-#define WINDOW_A_ADJ WINDOW_A
+#define WINDOW_A_ADJ 8
 
 typedef struct {
     uint32_t *tree;
@@ -210,6 +210,7 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
     int j;
     int idx;
     secp256k1_gej running_sum;
+    secp256k1_gej walking_sum;
     secp256k1_gej tmp;
     secp256k1_gej buckets_pos[ECMULT_TABLE_SIZE(WINDOW_A_ADJ)];
     int n;
@@ -245,11 +246,15 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
             }
         }
         secp256k1_gej_set_infinity(&running_sum);
+        secp256k1_gej_set_infinity(&walking_sum);
         for(j = ECMULT_TABLE_SIZE(WINDOW_A_ADJ) - 1; j >= 0; j--) {
             secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
-            secp256k1_gej_add_var(r, r, &running_sum, NULL);
-            secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
+            secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
         }
+        secp256k1_gej_double_var(&walking_sum, &walking_sum, NULL);
+        secp256k1_gej_neg(&running_sum, &running_sum);
+        secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
+        secp256k1_gej_add_var(r, r, &walking_sum, NULL);
     }
 }
 
