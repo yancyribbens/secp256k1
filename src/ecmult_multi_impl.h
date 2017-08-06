@@ -5,7 +5,7 @@
  **********************************************************************/
 
 #include "ecmult_multi.h"
-#define WINDOW_A_ADJ 8
+#define WINDOW_A_ADJ 10
 
 typedef struct {
     uint32_t *tree;
@@ -198,12 +198,11 @@ static void secp256k1_ecmult_multi_bos_coster(uint32_t *tree_space, secp256k1_ge
 
 struct secp256k1_ecmult_point_state {
     int *wnaf_na;
-    int bits_na;
+    int skew_na;
     size_t input_pos;
 };
 
 static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state *state, secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_gej *pt, size_t num) {
-    int bits = 0;
     size_t np;
     size_t no = 0;
     int i;
@@ -219,30 +218,28 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
             continue;
         }
         state[no].input_pos = np;
-        state[no].bits_na = secp256k1_ecmult_wnaf(state[no].wnaf_na,     256, &sc[np],      WINDOW_A_ADJ);
-        if (state[no].bits_na > bits) {
-            bits = state[no].bits_na;
-        }
+        state[no].skew_na = secp256k1_wnaf_const(state[no].wnaf_na, sc[np], WINDOW_A_ADJ-1);
         no++;
     }
 
     secp256k1_gej_set_infinity(r);
-    for (i = bits - 1; i >= 0; i--) {
+    for (i = WNAF_SIZE(WINDOW_A_ADJ-1); i >= 0; i--) {
         for(j = 0; j < ECMULT_TABLE_SIZE(WINDOW_A_ADJ); j++) {
             secp256k1_gej_set_infinity(&buckets_pos[j]);
         }
-        secp256k1_gej_double_var(r, r, NULL);
+        for(j = 0; j < WINDOW_A_ADJ-1; j++) {
+            secp256k1_gej_double_var(r, r, NULL);
+        }
 
         for (np = 0; np < no; ++np) {
-            if (i < state[np].bits_na && (n = state[np].wnaf_na[i])) {
-                if (n > 0) {
-                    idx = (n - 1)/2;
-                    secp256k1_gej_add_var(&buckets_pos[idx], &buckets_pos[idx], &pt[state[np].input_pos], NULL);
-                } else {
-                    idx = -(n + 1)/2;
-                    secp256k1_gej_neg(&tmp, &pt[state[np].input_pos]);
-                    secp256k1_gej_add_var(&buckets_pos[idx], &buckets_pos[idx], &tmp, NULL);
-                }
+            n = state[np].wnaf_na[i];
+            if (n > 0) {
+                idx = (n - 1)/2;
+                secp256k1_gej_add_var(&buckets_pos[idx], &buckets_pos[idx], &pt[state[np].input_pos], NULL);
+            } else {
+                idx = -(n + 1)/2;
+                secp256k1_gej_neg(&tmp, &pt[state[np].input_pos]);
+                secp256k1_gej_add_var(&buckets_pos[idx], &buckets_pos[idx], &tmp, NULL);
             }
         }
         secp256k1_gej_set_infinity(&running_sum);
@@ -251,10 +248,20 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
             secp256k1_gej_add_var(&running_sum, &running_sum, &buckets_pos[j], NULL);
             secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
         }
+
         secp256k1_gej_double_var(&walking_sum, &walking_sum, NULL);
         secp256k1_gej_neg(&running_sum, &running_sum);
         secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
         secp256k1_gej_add_var(r, r, &walking_sum, NULL);
+    }
+    /* correct for wnaf skew by setting r -= skew*pt for each pt where skew is in {1, 2} */
+    for (np = 0; np < no; ++np) {
+        int skew = state[np].skew_na;
+        secp256k1_gej_neg(&tmp, &pt[state[np].input_pos]);
+        if (skew == 2) {
+            secp256k1_gej_double_var(&tmp, &tmp, NULL);
+        }
+        secp256k1_gej_add_var(r, r, &tmp, NULL);
     }
 }
 
