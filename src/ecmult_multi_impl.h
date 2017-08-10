@@ -212,6 +212,7 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
     secp256k1_gej walking_sum;
     secp256k1_gej tmp;
     secp256k1_gej buckets_pos[ECMULT_TABLE_SIZE(WINDOW_A_ADJ)];
+    secp256k1_gej skew2_sum;
     int n;
     for (np = 0; np < num; ++np) {
         if (secp256k1_scalar_is_zero(&sc[np]) || secp256k1_gej_is_infinity(&pt[np])) {
@@ -254,15 +255,20 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
         secp256k1_gej_add_var(&walking_sum, &walking_sum, &running_sum, NULL);
         secp256k1_gej_add_var(r, r, &walking_sum, NULL);
     }
+
     /* correct for wnaf skew by setting r -= skew*pt for each pt where skew is in {1, 2} */
+    secp256k1_gej_set_infinity(&skew2_sum);
     for (np = 0; np < no; ++np) {
         int skew = state[np].skew_na;
         secp256k1_gej_neg(&tmp, &pt[state[np].input_pos]);
-        if (skew == 2) {
-            secp256k1_gej_double_var(&tmp, &tmp, NULL);
+        if (skew == 1) {
+            secp256k1_gej_add_var(r, r, &tmp, NULL);
+        } else {
+            secp256k1_gej_add_var(&skew2_sum, &skew2_sum, &tmp, NULL);
         }
-        secp256k1_gej_add_var(r, r, &tmp, NULL);
     }
+    secp256k1_gej_double_var(&skew2_sum, &skew2_sum, NULL);
+    secp256k1_gej_add_var(r, r, &skew2_sum, NULL);
 }
 
 #ifdef USE_ENDOMORPHISM
