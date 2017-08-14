@@ -223,6 +223,9 @@ static void secp256k1_ecmult_multi_pippenger(struct secp256k1_ecmult_point_state
     /* num_groups = bits/bucketbits but rounded up*/
     num_groups = (bits + bucketbits - 1)/bucketbits;
     secp256k1_gej_set_infinity(r);
+    if (no == 0) {
+        return;
+    }
     for (i = num_groups - 1; i >= 0; i--) {
         for(j = 0; j < 1<<bucketbits; j++) {
             secp256k1_gej_set_infinity(&buckets_pos[j]);
