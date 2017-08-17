@@ -2565,7 +2565,7 @@ void run_ecmult_multi_tests(void) {
     secp256k1_gej r;
     secp256k1_gej r2;
     ecmult_multi_data data;
-    secp256k1_scratch *scratch = secp256k1_scratch_create(&ctx->error_callback, 1024, 4096);
+    secp256k1_scratch *scratch = secp256k1_scratch_create(&ctx->error_callback, 1024*4, 4096*4);
 
     data.sc = sc;
     data.pt = pt;
