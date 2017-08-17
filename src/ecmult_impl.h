@@ -673,6 +673,20 @@ SECP256K1_INLINE static void secp256k1_ecmult_endo_split(secp256k1_scalar *s1, s
         secp256k1_gej_neg(p2, p2);
     }
 }
+SECP256K1_INLINE static void secp256k1_ecmult_endo_split_ge(secp256k1_scalar *s1, secp256k1_scalar *s2, secp256k1_ge *p1, secp256k1_ge *p2) {
+    secp256k1_scalar tmp = *s1;
+    secp256k1_scalar_split_lambda(s1, s2, &tmp);
+    secp256k1_ge_mul_lambda(p2, p1);
+
+    if (secp256k1_scalar_is_high(s1)) {
+        secp256k1_scalar_negate(s1, s1);
+        secp256k1_ge_neg(p1, p1);
+    }
+    if (secp256k1_scalar_is_high(s2)) {
+        secp256k1_scalar_negate(s2, s2);
+        secp256k1_ge_neg(p2, p2);
+    }
+}
 #endif
 
 static int secp256k1_ecmult_multi_split_bos_coster(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
@@ -782,7 +796,13 @@ struct secp256k1_ecmult_point_state_pippenger {
 };
 
 static int secp256k1_ecmult_multi_pippenger(secp256k1_gej *buckets, int bucketbits, struct secp256k1_ecmult_point_state_pippenger *state, secp256k1_gej *r, secp256k1_scalar *sc, secp256k1_ge *pt, size_t num) {
+
+#ifdef USE_ENDOMORPHISM
+    int bits = 128;
+#else
     int bits = 256;
+#endif
+
     size_t np;
     size_t no = 0;
     int i;
@@ -934,7 +954,7 @@ static int secp256k1_ecmult_multi_split_pippenger(const secp256k1_ecmult_context
     pt[0] = secp256k1_ge_const_g;
     idx++;
 #ifdef USE_ENDOMORPHISM
-    secp256k1_ecmult_endo_split(&sc[0], &sc[1], &pt[0], &pt[1]);
+    secp256k1_ecmult_endo_split_ge(&sc[0], &sc[1], &pt[0], &pt[1]);
     idx++;
 #endif
 
@@ -945,7 +965,7 @@ static int secp256k1_ecmult_multi_split_pippenger(const secp256k1_ecmult_context
         }
         idx++;
 #ifdef USE_ENDOMORPHISM
-        secp256k1_ecmult_endo_split(&sc[idx - 1], &sc[idx], &pt[idx - 1], &pt[idx]);
+        secp256k1_ecmult_endo_split_ge(&sc[idx - 1], &sc[idx], &pt[idx - 1], &pt[idx]);
         idx++;
         if (idx >= entries_per_batch - 1) {
 #else
