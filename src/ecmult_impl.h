@@ -812,13 +812,13 @@ static int secp256k1_ecmult_multi_pippenger(secp256k1_gej *buckets, int bucketbi
         for(j = 0; j < bucketbits; j++) {
             secp256k1_gej_double_var(r, r, NULL);
         }
+        /* nreadbits is important when bucketbits does not divide bits */
+        if (i == num_groups - 1) {
+            nreadbits = bits - bucketbits*i;
+        } else {
+            nreadbits = bucketbits;
+        }
         for (np = 0; np < no; ++np) {
-            /* nreadbits is important when bucketbits does not divide bits */
-            if (i == num_groups - 1) {
-                nreadbits = bits - bucketbits*i;
-            } else {
-                nreadbits = bucketbits;
-            }
             /* most significant bits are at the end and therefore retrieved first*/
             n = secp256k1_scalar_get_bits_var(&sc[state[np].input_pos], bucketbits*i, nreadbits);
             if (n > 0) {
@@ -826,7 +826,7 @@ static int secp256k1_ecmult_multi_pippenger(secp256k1_gej *buckets, int bucketbi
             }
         }
         secp256k1_gej_set_infinity(&running_sum);
-        for(j = (1 << bucketbits) - 1; j >= 1; j--) {
+        for(j = (1 << nreadbits) - 1; j >= 1; j--) {
             secp256k1_gej_add_var(&running_sum, &running_sum, &buckets[j], NULL);
             secp256k1_gej_add_var(r, r, &running_sum, NULL);
         }
