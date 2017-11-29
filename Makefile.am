@@ -80,6 +80,10 @@ libsecp256k1_jni_la_SOURCES  = src/java/org_bitcoin_NativeSecp256k1.c src/java/o
 libsecp256k1_jni_la_CPPFLAGS = -DSECP256K1_BUILD $(JNI_INCLUDES)
 
 noinst_PROGRAMS =
+noinst_PROGRAMS += fuzz_ecmult_multi
+fuzz_ecmult_multi_SOURCES = src/fuzz_ecmult_multi.c
+fuzz_ecmult_multi_LDADD = $(SECP_LIBS) $(COMMON_LIB)
+fuzz_ecmult_multi_CPPFLAGS = -DSECP256K1_BUILD $(SECP_INCLUDES)
 if USE_BENCHMARK
 noinst_PROGRAMS += bench_verify bench_sign bench_internal bench_ecmult
 bench_verify_SOURCES = src/bench_verify.c
