@@ -84,6 +84,10 @@ noinst_PROGRAMS += fuzz_ecmult_multi
 fuzz_ecmult_multi_SOURCES = src/fuzz_ecmult_multi.c
 fuzz_ecmult_multi_LDADD = $(SECP_LIBS) $(COMMON_LIB)
 fuzz_ecmult_multi_CPPFLAGS = -DSECP256K1_BUILD $(SECP_INCLUDES)
+noinst_PROGRAMS += fuzz_ecmult_multi_compare
+fuzz_ecmult_multi_compare_SOURCES = src/fuzz_ecmult_multi_compare.c
+fuzz_ecmult_multi_compare_LDADD = $(SECP_LIBS) $(COMMON_LIB)
+fuzz_ecmult_multi_compare_CPPFLAGS = -DSECP256K1_BUILD $(SECP_INCLUDES)
 if USE_BENCHMARK
 noinst_PROGRAMS += bench_verify bench_sign bench_internal bench_ecmult
 bench_verify_SOURCES = src/bench_verify.c
