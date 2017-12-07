@@ -513,7 +513,7 @@ static size_t secp256k1_strauss_scratch_size(size_t n_points) {
     return n_points*point_size;
 }
 
-static int secp256k1_ecmult_strauss_batch(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n_points, size_t cb_offset) {
+static int secp256k1_ecmult_strauss_batch(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n_points, size_t cb_offset) {
     secp256k1_gej* points;
     secp256k1_scalar* scalars;
     struct secp256k1_strauss_state state;
@@ -524,7 +524,7 @@ static int secp256k1_ecmult_strauss_batch(const secp256k1_ecmult_context *ctx, s
         return 1;
     }
 
-    if (!secp256k1_scratch_resize(scratch, error_callback, secp256k1_strauss_scratch_size(n_points), STRAUSS_SCRATCH_OBJECTS)) {
+    if (!secp256k1_scratch_resize(scratch, secp256k1_strauss_scratch_size(n_points), STRAUSS_SCRATCH_OBJECTS)) {
         return 0;
     }
     secp256k1_scratch_reset(scratch);
@@ -550,8 +550,8 @@ static int secp256k1_ecmult_strauss_batch(const secp256k1_ecmult_context *ctx, s
 }
 
 /* Wrapper for secp256k1_ecmult_multi_func interface */
-static int secp256k1_ecmult_strauss_batch_single(const secp256k1_ecmult_context *actx, secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
-    return secp256k1_ecmult_strauss_batch(actx, scratch, error_callback, r, inp_g_sc, cb, cbdata, n, 0);
+static int secp256k1_ecmult_strauss_batch_single(const secp256k1_ecmult_context *actx, secp256k1_scratch *scratch, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
+    return secp256k1_ecmult_strauss_batch(actx, scratch, r, inp_g_sc, cb, cbdata, n, 0);
 }
 
 static size_t secp256k1_strauss_max_points(secp256k1_scratch *scratch) {
@@ -836,7 +836,7 @@ static size_t secp256k1_pippenger_scratch_size(size_t n_points, int bucket_windo
     return ((1<<bucket_window) * sizeof(secp256k1_gej) + sizeof(struct secp256k1_pippenger_state) + entries * entry_size);
 }
 
-static int secp256k1_ecmult_pippenger_batch(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n_points, size_t cb_offset) {
+static int secp256k1_ecmult_pippenger_batch(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n_points, size_t cb_offset) {
     /* Use 2(n+1) with the endomorphism, n+1 without, when calculating batch
      * sizes. The reason for +1 is that we add the G scalar to the list of
      * other scalars. */
@@ -861,7 +861,7 @@ static int secp256k1_ecmult_pippenger_batch(const secp256k1_ecmult_context *ctx,
     }
 
     bucket_window = secp256k1_pippenger_bucket_window(n_points);
-    if (!secp256k1_scratch_resize(scratch, error_callback, secp256k1_pippenger_scratch_size(n_points, bucket_window), PIPPENGER_SCRATCH_OBJECTS)) {
+    if (!secp256k1_scratch_resize(scratch, secp256k1_pippenger_scratch_size(n_points, bucket_window), PIPPENGER_SCRATCH_OBJECTS)) {
         return 0;
     }
     secp256k1_scratch_reset(scratch);
@@ -911,8 +911,8 @@ static int secp256k1_ecmult_pippenger_batch(const secp256k1_ecmult_context *ctx,
 }
 
 /* Wrapper for secp256k1_ecmult_multi_func interface */
-static int secp256k1_ecmult_pippenger_batch_single(const secp256k1_ecmult_context *actx, secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
-    return secp256k1_ecmult_pippenger_batch(actx, scratch, error_callback, r, inp_g_sc, cb, cbdata, n, 0);
+static int secp256k1_ecmult_pippenger_batch_single(const secp256k1_ecmult_context *actx, secp256k1_scratch *scratch, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
+    return secp256k1_ecmult_pippenger_batch(actx, scratch, r, inp_g_sc, cb, cbdata, n, 0);
 }
 
 /**
@@ -956,11 +956,11 @@ static size_t secp256k1_pippenger_max_points(secp256k1_scratch *scratch) {
     return res;
 }
 
-typedef int (*secp256k1_ecmult_multi_func)(const secp256k1_ecmult_context*, secp256k1_scratch*, const secp256k1_callback*, secp256k1_gej*, const secp256k1_scalar*, secp256k1_ecmult_multi_callback cb, void*, size_t);
-static int secp256k1_ecmult_multi_var(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, const secp256k1_callback* error_callback, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
+typedef int (*secp256k1_ecmult_multi_func)(const secp256k1_ecmult_context*, secp256k1_scratch*, secp256k1_gej*, const secp256k1_scalar*, secp256k1_ecmult_multi_callback cb, void*, size_t);
+static int secp256k1_ecmult_multi_var(const secp256k1_ecmult_context *ctx, secp256k1_scratch *scratch, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
     size_t i;
 
-    int (*f)(const secp256k1_ecmult_context*, secp256k1_scratch*, const secp256k1_callback*, secp256k1_gej*, const secp256k1_scalar*, secp256k1_ecmult_multi_callback cb, void*, size_t, size_t);
+    int (*f)(const secp256k1_ecmult_context*, secp256k1_scratch*, secp256k1_gej*, const secp256k1_scalar*, secp256k1_ecmult_multi_callback cb, void*, size_t, size_t);
     size_t max_points;
     size_t n_batches;
     size_t n_batch_points;
@@ -999,7 +999,7 @@ static int secp256k1_ecmult_multi_var(const secp256k1_ecmult_context *ctx, secp2
         size_t nbp = n < n_batch_points ? n : n_batch_points;
         size_t offset = n_batch_points*i;
         secp256k1_gej tmp;
-        if (!f(ctx, scratch, error_callback, &tmp, i == 0 ? inp_g_sc : NULL, cb, cbdata, nbp, offset)) {
+        if (!f(ctx, scratch, &tmp, i == 0 ? inp_g_sc : NULL, cb, cbdata, nbp, offset)) {
             return 0;
         }
         secp256k1_gej_add_var(r, r, &tmp, NULL);

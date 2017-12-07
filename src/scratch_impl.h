@@ -26,6 +26,7 @@ static secp256k1_scratch* secp256k1_scratch_create(const secp256k1_callback* err
         ret->offset = 0;
         ret->init_size = init_size;
         ret->max_size = max_size;
+        ret->error_callback = error_callback;
     }
     return ret;
 }
@@ -44,10 +45,10 @@ static size_t secp256k1_scratch_max_allocation(const secp256k1_scratch* scratch,
     return scratch->max_size - objects * ALIGNMENT;
 }
 
-static int secp256k1_scratch_resize(secp256k1_scratch* scratch, const secp256k1_callback* error_callback, size_t n, size_t objects) {
+static int secp256k1_scratch_resize(secp256k1_scratch* scratch, size_t n, size_t objects) {
     n += objects * ALIGNMENT;
     if (n > scratch->init_size && n <= scratch->max_size) {
-        void *tmp = checked_realloc(error_callback, scratch->data, n);
+        void *tmp = checked_realloc(scratch->error_callback, scratch->data, n);
         if (tmp == NULL) {
             return 0;
         }
