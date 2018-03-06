@@ -124,6 +124,74 @@ int secp256k1_aggsig_generate_nonce(const secp256k1_context* ctx, secp256k1_aggs
     return 1;
 }
 
+int secp256k1_aggsig_export_nonce(secp256k1_aggsig_context* aggctx, secp256k1_pubkey* nonce) {
+    size_t i;
+    secp256k1_ge Q;
+    for (i = 0; i < aggctx->n_sigs; i++) {
+        if (aggctx->progress[i] != NONCE_PROGRESS_OURS) {
+            return 0;
+        }
+    }
+    secp256k1_ge_set_gej(&Q, &aggctx->pubnonce_sum);
+    secp256k1_pubkey_save(nonce, &Q);
+    return 1;
+}
+
+
+int secp256k1_aggsig_import_pubkeys(const secp256k1_context* ctx, secp256k1_aggsig_context* aggctx, const secp256k1_pubkey *pubkeys, size_t* indices, size_t n_pubkeys, secp256k1_pubkey* nonces, size_t n_nonces) {
+    size_t i, j, k;
+    secp256k1_ge Q;
+    size_t new_n_pubkeys = aggctx->n_sigs + n_pubkeys;
+
+    enum nonce_progress *new_progress;
+    secp256k1_pubkey *new_pubkeys;
+    secp256k1_scalar *new_secnonce;
+
+
+    printf("A\n");
+    for (i = 0; i < aggctx->n_sigs; i++) {
+        if (aggctx->progress[i] != NONCE_PROGRESS_OURS && aggctx->progress[i] != NONCE_PROGRESS_OTHER) {
+            return 0;
+        }
+    }
+    printf("A\n");
+    j = 0;
+    k = 0;
+    new_progress = (enum nonce_progress*)checked_malloc(&ctx->error_callback, new_n_pubkeys * sizeof(*aggctx->progress));
+    new_pubkeys = (secp256k1_pubkey*)checked_malloc(&ctx->error_callback, new_n_pubkeys * sizeof(*aggctx->pubkeys));
+    new_secnonce = (secp256k1_scalar*)checked_malloc(&ctx->error_callback, new_n_pubkeys * sizeof(*aggctx->secnonce));
+    for (i = 0; i < new_n_pubkeys; i++) {
+        printf("i %ld\n", i);
+        if (j < n_pubkeys && i == indices[j]) {
+            printf("j %ld\n", j);
+            new_progress[i] = NONCE_PROGRESS_OTHER;
+            new_pubkeys[i] = pubkeys[j];
+            j++;
+        } else {
+            printf("k %ld\n", k);
+            if(k >= aggctx->n_sigs) {
+                return 0;
+            }
+            new_progress[i] = NONCE_PROGRESS_OURS;
+            new_pubkeys[i] = aggctx->pubkeys[k];
+            new_secnonce[i] = aggctx->secnonce[k];
+            k++;
+        }
+    }
+    for (i = 0; i < n_nonces; i++) {
+        secp256k1_pubkey_load(ctx, &Q, &nonces[i]);
+        secp256k1_gej_add_ge_var(&aggctx->pubnonce_sum, &aggctx->pubnonce_sum, &Q, NULL);
+    }
+    free(aggctx->progress);
+    free(aggctx->pubkeys);
+    free(aggctx->secnonce);
+    aggctx->progress = new_progress;
+    aggctx->pubkeys = new_pubkeys;
+    aggctx->secnonce = new_secnonce;
+    aggctx->n_sigs = new_n_pubkeys;
+    return 1;
+}
+
 int secp256k1_aggsig_partial_sign(const secp256k1_context* ctx, secp256k1_aggsig_context* aggctx, secp256k1_aggsig_partial_signature *partial, const unsigned char *msghash32, const unsigned char *seckey32, size_t index) {
     size_t i;
     secp256k1_scalar sighash;
@@ -165,6 +233,10 @@ int secp256k1_aggsig_partial_sign(const secp256k1_context* ctx, secp256k1_aggsig
     if (secp256k1_compute_sighash(&sighash, prehash, index) == 0) {
         return 0;
     }
+    printf("prehash: %d\n", prehash[0]);
+    /*
+    int bits = secp256k1_scalar_get_bits(&sighash, 0, 32);*/
+    /*printf("bits: %d\n", bits);*/
     secp256k1_scalar_set_b32(&sec, seckey32, &overflow);
     if (overflow) {
         secp256k1_scalar_clear(&sec);
@@ -191,11 +263,13 @@ int secp256k1_aggsig_combine_signatures(const secp256k1_context* ctx, secp256k1_
     ARG_CHECK(partial != NULL);
     (void) ctx;
 
+    printf("bar\n");
     for (i = 0; i < aggctx->n_sigs; i++) {
-        if (aggctx->progress[i] != NONCE_PROGRESS_SIGNED) {
+        if (aggctx->progress[i] != NONCE_PROGRESS_SIGNED && aggctx->progress[i] != NONCE_PROGRESS_OTHER) {
             return 0;
         }
     }
+    printf("foo\n");
 
     secp256k1_scalar_set_int(&s, 0);
     for (i = 0; i < aggctx->n_sigs; i++) {
@@ -234,6 +308,9 @@ static int secp256k1_aggsig_verify_callback(secp256k1_scalar *sc, secp256k1_ge *
     if (secp256k1_compute_sighash(sc, cbdata->prehash, idx) == 0) {
         return 0;
     }
+    /*
+    int bits = secp256k1_scalar_get_bits(sc, 0, 32);*/
+    /*printf("bits: %d\n", bits);*/
     secp256k1_scalar_negate(sc, sc);
     secp256k1_pubkey_load(cbdata->ctx, pt, &cbdata->pubkeys[idx]);
     return 1;
@@ -274,18 +351,24 @@ int secp256k1_aggsig_verify(const secp256k1_context* ctx, secp256k1_scratch_spac
         return 0;
     }
 
+    printf("batz\n");
+
     /* Populate callback data */
     cbdata.ctx = ctx;
     cbdata.pubkeys = pubkeys;
     secp256k1_compute_prehash(ctx, cbdata.prehash, pubkeys, n_pubkeys, &r_x, msg32);
+    printf("prehash: %d\n", cbdata.prehash[0]);
 
     /* Compute sum sG - e_i*P_i, which should be R */
     if (!secp256k1_ecmult_multi_var(&ctx->ecmult_ctx, scratch, &pk_sum, &g_sc, secp256k1_aggsig_verify_callback, &cbdata, n_pubkeys)) {
+    printf("oh noes\n");
         return 0;
     }
 
     /* Check sum */
     secp256k1_ge_set_gej(&pk_sum_ge, &pk_sum);
+    printf("a: %d\n", secp256k1_fe_equal_var(&r_x, &pk_sum_ge.x));
+    printf("b: %d\n", secp256k1_gej_has_quad_y_var(&pk_sum));
     return secp256k1_fe_equal_var(&r_x, &pk_sum_ge.x) &&
            secp256k1_gej_has_quad_y_var(&pk_sum);
 }

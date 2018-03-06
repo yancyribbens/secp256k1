@@ -230,10 +230,157 @@ void test_aggsig_state_machine(void) {
     secp256k1_aggsig_context_destroy(aggctx);
 }
 
+struct secp256k1_test_signer {
+    secp256k1_aggsig_context *aggctx;
+    unsigned char seckeys[32];
+};
+
+void test_aggsig_multiparty(void) {
+    secp256k1_scratch_space *scratch = secp256k1_scratch_space_create(ctx, 1024, 32768);
+    int n_signers = 2;
+    struct secp256k1_test_signer signer[2];
+    int i;
+    secp256k1_pubkey nonces[2];
+    unsigned char seed[32] = { 0 };
+    size_t indices0[1] = { 0 };
+    size_t indices1[1] = { 1 };
+    unsigned char msg[32] = { 99 };
+    secp256k1_aggsig_partial_signature partial[2];
+    unsigned char sig641[64];
+    unsigned char sig642[64];
+    secp256k1_gej nonce;
+    secp256k1_gej pubnonce1;
+    secp256k1_gej pubnonce2;
+
+    for(i = 0; i < n_signers; i++) {
+        secp256k1_pubkey pubkeys[1];
+        secp256k1_scalar tmp_s;
+        seed[0] = i;
+        random_scalar_order_test(&tmp_s);
+        secp256k1_scalar_get_b32(signer[i].seckeys, &tmp_s);
+        CHECK(secp256k1_ec_pubkey_create(ctx, &pubkeys[0], signer[i].seckeys) == 1);
+        signer[i].aggctx = secp256k1_aggsig_context_create(ctx, pubkeys, 1, seed);
+        CHECK(secp256k1_aggsig_generate_nonce(ctx, signer[i].aggctx, 0));
+        secp256k1_aggsig_export_nonce(signer[i].aggctx, &nonces[i]);
+    }
+
+    pubnonce1 = signer[0].aggctx->pubnonce_sum;
+    pubnonce2 = signer[1].aggctx->pubnonce_sum;
+    CHECK(secp256k1_aggsig_import_pubkeys(ctx, signer[0].aggctx, signer[1].aggctx->pubkeys, indices1, 1, &nonces[1], 1));
+    CHECK(secp256k1_aggsig_import_pubkeys(ctx, signer[1].aggctx, signer[0].aggctx->pubkeys, indices0, 1, &nonces[0], 1));
+    printf("res %d\n", memcmp(signer[0].aggctx->pubkeys[0].data, signer[0].aggctx->pubkeys[0].data, 64));
+    CHECK(memcmp(signer[0].aggctx->pubkeys[0].data, signer[1].aggctx->pubkeys[0].data, 64) == 0);
+    CHECK(memcmp(signer[0].aggctx->pubkeys[1].data, signer[1].aggctx->pubkeys[1].data, 64) == 0);
+    secp256k1_gej_neg(&nonce, &signer[0].aggctx->pubnonce_sum);
+    secp256k1_gej_add_var(&nonce, &nonce, &signer[1].aggctx->pubnonce_sum, NULL);
+    CHECK(secp256k1_gej_is_infinity(&nonce));
+    secp256k1_gej_add_var(&nonce, &pubnonce1, &pubnonce2, NULL);
+    secp256k1_gej_neg(&nonce, &signer[0].aggctx->pubnonce_sum);
+    secp256k1_gej_add_var(&nonce, &nonce, &signer[1].aggctx->pubnonce_sum, NULL);
+    CHECK(secp256k1_gej_is_infinity(&nonce));
+
+    CHECK(secp256k1_aggsig_partial_sign(ctx, signer[0].aggctx, &partial[0], msg, &signer[0].seckeys[0], 0));
+    CHECK(secp256k1_aggsig_partial_sign(ctx, signer[1].aggctx, &partial[1], msg, &signer[1].seckeys[0], 1));
+
+    CHECK(secp256k1_aggsig_combine_signatures(ctx, signer[0].aggctx, sig641, partial));
+    CHECK(secp256k1_aggsig_combine_signatures(ctx, signer[1].aggctx, sig642, partial));
+    CHECK(memcmp(sig641, sig642, 64) == 0);
+    CHECK(secp256k1_aggsig_verify(ctx, scratch, sig641, msg, signer[0].aggctx->pubkeys, signer[0].aggctx->n_sigs));
+    CHECK(secp256k1_aggsig_verify(ctx, scratch, sig642, msg, signer[1].aggctx->pubkeys, signer[1].aggctx->n_sigs));
+
+    for(i = 0; i < n_signers; i++) {
+        secp256k1_aggsig_context_destroy(signer[i].aggctx);
+    }
+    secp256k1_scratch_space_destroy(scratch);
+}
+
+#define N_SIGNERS 3
+#define MAX_N_PUBKEYS 3
+void test_aggsig_multiparty2(void) {
+    secp256k1_scratch_space *scratch = secp256k1_scratch_space_create(ctx, 1024, 32768);
+    struct secp256k1_test_signer signer[N_SIGNERS];
+    int i, j;
+    size_t indices0[1] = { 0 };
+    size_t indices1[1] = { 1 };
+    unsigned char msg[32] = { 99 };
+    secp256k1_aggsig_partial_signature partial[2];
+    unsigned char sig641[64];
+    unsigned char sig642[64];
+    secp256k1_gej nonce;
+    secp256k1_gej pubnonce1;
+    secp256k1_gej pubnonce2;
+
+    for(i = 0; i < n_signers; i++) {
+        unsigned char seed[32];
+        secp256k1_rand256(seed);
+        secp256k1_pubkey pubkeys[MAX_N_PUBKEYS];
+        secp256k1_scalar tmp_s;
+        int n_pubkeys = secp256k1_rand_int(5)+1;
+
+        for(j = 0; j < n_pubkeys; j++) {
+            random_scalar_order_test(&tmp_s);
+            secp256k1_scalar_get_b32(signer[i].seckeys, &tmp_s);
+            CHECK(secp256k1_ec_pubkey_create(ctx, &pubkeys[j], signer[i].seckeys) == 1);
+        }
+        signer[i].aggctx = secp256k1_aggsig_context_create(ctx, pubkeys, n_pubkeys, seed);
+        for(j = 0; j < n_pubkeys; j++) {
+            CHECK(secp256k1_aggsig_generate_nonce(ctx, signer[i].aggctx, j));
+        }   
+    }
+
+    pubnonce1 = signer[0].aggctx->pubnonce_sum;
+    pubnonce2 = signer[1].aggctx->pubnonce_sum;
+    for(i = 0; i < n_signers; i++) {
+        secp256k1_pubkey nonces[N_SIGNERS];
+        secp256k1_pubkey pubkeys[N_SIGNERS*MAX_N_PUBKEYS];
+        size_t indices[N_SIGNERS*MAX_N_PUBKEYS];
+        int idx = 0;
+        for(j = 0; j < n_signers; j++) {
+            if (j == i) {
+                continue;
+            }
+            secp256k1_aggsig_export_nonce(signer[i].aggctx, &nonces[idx]);
+            idx+=1;
+        
+        }   
+        CHECK(secp256k1_aggsig_import_pubkeys(ctx, signer[i].aggctx, pubkeys, indices, 1, nonces, 1));
+    }
+
+    CHECK(secp256k1_aggsig_import_pubkeys(ctx, signer[0].aggctx, signer[1].aggctx->pubkeys, indices1, 1, &nonces[1], 1));
+    CHECK(secp256k1_aggsig_import_pubkeys(ctx, signer[1].aggctx, signer[0].aggctx->pubkeys, indices0, 1, &nonces[0], 1));
+    printf("res %d\n", memcmp(signer[0].aggctx->pubkeys[0].data, signer[0].aggctx->pubkeys[0].data, 64));
+    CHECK(memcmp(signer[0].aggctx->pubkeys[0].data, signer[1].aggctx->pubkeys[0].data, 64) == 0);
+    CHECK(memcmp(signer[0].aggctx->pubkeys[1].data, signer[1].aggctx->pubkeys[1].data, 64) == 0);
+    secp256k1_gej_neg(&nonce, &signer[0].aggctx->pubnonce_sum);
+    secp256k1_gej_add_var(&nonce, &nonce, &signer[1].aggctx->pubnonce_sum, NULL);
+    CHECK(secp256k1_gej_is_infinity(&nonce));
+    secp256k1_gej_add_var(&nonce, &pubnonce1, &pubnonce2, NULL);
+    secp256k1_gej_neg(&nonce, &signer[0].aggctx->pubnonce_sum);
+    secp256k1_gej_add_var(&nonce, &nonce, &signer[1].aggctx->pubnonce_sum, NULL);
+    CHECK(secp256k1_gej_is_infinity(&nonce));
+
+    CHECK(secp256k1_aggsig_partial_sign(ctx, signer[0].aggctx, &partial[0], msg, &signer[0].seckeys[0], 0));
+    CHECK(secp256k1_aggsig_partial_sign(ctx, signer[1].aggctx, &partial[1], msg, &signer[1].seckeys[0], 1));
+
+    CHECK(secp256k1_aggsig_combine_signatures(ctx, signer[0].aggctx, sig641, partial));
+    CHECK(secp256k1_aggsig_combine_signatures(ctx, signer[1].aggctx, sig642, partial));
+    CHECK(memcmp(sig641, sig642, 64) == 0);
+    CHECK(secp256k1_aggsig_verify(ctx, scratch, sig641, msg, signer[0].aggctx->pubkeys, signer[0].aggctx->n_sigs));
+    CHECK(secp256k1_aggsig_verify(ctx, scratch, sig642, msg, signer[1].aggctx->pubkeys, signer[1].aggctx->n_sigs));
+
+    for(i = 0; i < n_signers; i++) {
+        secp256k1_aggsig_context_destroy(signer[i].aggctx);
+    }
+    secp256k1_scratch_space_destroy(scratch);
+}
+
+
 void run_aggsig_tests(void) {
     test_aggsig_api();
     test_aggsig_onesigner();
     test_aggsig_state_machine();
+    test_aggsig_multiparty();
+    test_aggsig_multiparty2();
 }
 
 #endif
