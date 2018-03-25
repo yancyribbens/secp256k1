@@ -150,6 +150,7 @@ int main(int argc, char **argv) {
     } else {
         data.ecmult_multi = secp256k1_ecmult_multi_var;
     }
+    data.ecmult_multi = secp256k1_ecmult_strauss_batch_single;
 
     /* Allocate stuff */
     data.ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
@@ -175,15 +176,15 @@ int main(int argc, char **argv) {
     secp256k1_ge_set_all_gej_var(data.pubkeys, pubkeys_gej, POINTS, &data.ctx->error_callback);
     free(pubkeys_gej);
 
-    for (i = 1; i <= 8; ++i) {
-        run_test(&data, i, 1);
+    for (i = 1; i <= 9999; ++i) {
+        run_test(&data, 128, 1);
     }
 
-    for (p = 0; p <= 11; ++p) {
-        for (i = 9; i <= 16; ++i) {
-            run_test(&data, i << p, 1);
-        }
-    }
+    /*for (p = 0; p <= 11; ++p) {*/
+        /*for (i = 9; i <= 16; ++i) {*/
+            /*run_test(&data, i << p, 1);*/
+        /*}*/
+    /*}*/
     secp256k1_context_destroy(data.ctx);
     secp256k1_scratch_space_destroy(data.scratch);
     free(data.scalars);
