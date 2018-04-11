@@ -18,8 +18,10 @@
 #include "bench.h"
 #include "secp256k1.c"
 
-#define PRECOMPS 8
-#define POINTS (PRECOMPS*128)
+#define PRECOMPS 16
+#define NORMAL_POINTS 0
+#define PRECOMPED_POINTS 128
+#define POINTS (NORMAL_POINTS + (PRECOMPS*PRECOMPED_POINTS))
 #define ITERS 10000
 
 typedef struct {
@@ -209,12 +211,12 @@ int main(int argc, char **argv) {
 
     /* Generate a set of scalars, and private/public keypairs. */
     pubkeys_gej = malloc(sizeof(secp256k1_gej) * POINTS);
-    pubkeys_gej2 = malloc(sizeof(secp256k1_gej) * POINTS/PRECOMPS);
-    scalars = malloc(sizeof(secp256k1_scalar) * POINTS/PRECOMPS);
-    seckeys = malloc(sizeof(secp256k1_scalar) * POINTS/PRECOMPS);
+    pubkeys_gej2 = malloc(sizeof(secp256k1_gej) * PRECOMPED_POINTS);
+    scalars = malloc(sizeof(secp256k1_scalar) * PRECOMPED_POINTS);
+    seckeys = malloc(sizeof(secp256k1_scalar) * PRECOMPED_POINTS);
     secp256k1_gej_set_ge(&pubkeys_gej2[0], &secp256k1_ge_const_g);
     secp256k1_scalar_set_int(&seckeys[0], 1);
-    for (i = 0; i < POINTS/PRECOMPS; ++i) {
+    for (i = 0; i < PRECOMPED_POINTS; ++i) {
         generate_scalar(i, &scalars[i]);
         if (i) {
             secp256k1_gej_double_var(&pubkeys_gej2[i], &pubkeys_gej2[i - 1], NULL);
@@ -222,11 +224,21 @@ int main(int argc, char **argv) {
         }
         assert(pippenger_split(&data.ctx->ecmult_ctx, data.scalars + i*PRECOMPS, pubkeys_gej + i*PRECOMPS, data.seckeys + i*PRECOMPS, &scalars[i], &pubkeys_gej2[i], &seckeys[i], PRECOMPS));
     }
+    for (i = 0; i < NORMAL_POINTS; ++i) {
+        int idx = PRECOMPED_POINTS*PRECOMPS+i;
+        generate_scalar(i, &data.scalars[idx]);
+        secp256k1_gej_double_var(&pubkeys_gej[idx], &pubkeys_gej[idx - 1], NULL);
+        assert(secp256k1_gej_is_valid_var(&pubkeys_gej[idx]));
+        secp256k1_scalar_add(&data.seckeys[idx], &data.seckeys[idx - 1], &data.seckeys[idx - 1]);
+    }
 
     secp256k1_ge_set_all_gej_var(data.pubkeys, pubkeys_gej, POINTS, &data.ctx->error_callback);
+    for (i = 0; i < POINTS; ++i) {
+        assert(secp256k1_ge_is_valid_var(&data.pubkeys[i]));
+    }
     free(pubkeys_gej);
 
-    run_test(&data, POINTS, 1, POINTS/PRECOMPS);
+    run_test(&data, POINTS, 1, NORMAL_POINTS + PRECOMPED_POINTS);
 
     secp256k1_context_destroy(data.ctx);
     secp256k1_scratch_space_destroy(data.scratch);
