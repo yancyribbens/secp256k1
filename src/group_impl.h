@@ -126,30 +126,48 @@ static void secp256k1_ge_set_gej_var(secp256k1_ge *r, secp256k1_gej *a) {
     r->y = a->y;
 }
 
-static void secp256k1_ge_set_all_gej_var(secp256k1_ge *r, const secp256k1_gej *a, size_t len, const secp256k1_callback *cb) {
-    secp256k1_fe *az;
-    secp256k1_fe *azi;
+static void secp256k1_ge_set_all_gej_var(secp256k1_ge *r, const secp256k1_gej *a, size_t len) {
+    secp256k1_fe u;
+    secp256k1_fe one;
     size_t i;
-    size_t count = 0;
-    az = (secp256k1_fe *)checked_malloc(cb, sizeof(secp256k1_fe) * len);
-    for (i = 0; i < len; i++) {
-        if (!a[i].infinity) {
-            az[count++] = a[i].z;
-        }
+
+    secp256k1_fe_set_int(&one, 1);
+
+    if (len < 1) {
+        return;
     }
 
-    azi = (secp256k1_fe *)checked_malloc(cb, sizeof(secp256k1_fe) * count);
-    secp256k1_fe_inv_all_var(azi, az, count);
-    free(az);
+    /* Do a batch field inversion of all a.z values, using r.x as temporary storage for them.
+     * For infinite points, where a.z may be 0, use 1 in its place to avoid derailing the
+     * inversion algorithm. */
+    if (a[0].infinity) {
+        r[0].infinity = 1;
+        r[0].x = one;
+    } else {
+        r[0].x = a[0].z;
+    }
 
-    count = 0;
-    for (i = 0; i < len; i++) {
-        r[i].infinity = a[i].infinity;
-        if (!a[i].infinity) {
-            secp256k1_ge_set_gej_zinv(&r[i], &a[i], &azi[count++]);
+    for (i = 1; i < len; i++) {
+        if (a[i].infinity) {
+            r[i].infinity = 1;
+            secp256k1_fe_mul(&r[i].x, &r[i - 1].x, &one);
+        } else {
+#ifdef VERIFY
+            secp256k1_fe zcopy = a[i].z;
+            CHECK(!secp256k1_fe_normalizes_to_zero_var(&zcopy));
+#endif
+            secp256k1_fe_mul(&r[i].x, &r[i - 1].x, &a[i].z);
         }
     }
-    free(azi);
+    i--;
+    secp256k1_fe_inv_var(&u, &r[i].x);
+
+    for(; i > 0; i--) {
+        secp256k1_fe_mul(&r[i].x, &r[i - 1].x, &u);
+        secp256k1_ge_set_gej_zinv(&r[i], &a[i], &r[i].x);
+        secp256k1_fe_mul(&u, &u, &a[i].z);
+    }
+    secp256k1_ge_set_gej_zinv(&r[0], &a[0], &u);
 }
 
 static void secp256k1_ge_set_table_gej_var(secp256k1_ge *r, const secp256k1_gej *a, const secp256k1_fe *zr, size_t len) {

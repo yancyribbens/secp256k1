@@ -1843,28 +1843,6 @@ void run_field_inv_var(void) {
     }
 }
 
-void run_field_inv_all_var(void) {
-    secp256k1_fe x[16], xi[16], xii[16];
-    int i;
-    /* Check it's safe to call for 0 elements */
-    secp256k1_fe_inv_all_var(xi, x, 0);
-    for (i = 0; i < count; i++) {
-        size_t j;
-        size_t len = secp256k1_rand_int(15) + 1;
-        for (j = 0; j < len; j++) {
-            random_fe_non_zero(&x[j]);
-        }
-        secp256k1_fe_inv_all_var(xi, x, len);
-        for (j = 0; j < len; j++) {
-            CHECK(check_fe_inverse(&x[j], &xi[j]));
-        }
-        secp256k1_fe_inv_all_var(xii, xi, len);
-        for (j = 0; j < len; j++) {
-            CHECK(check_fe_equal(&x[j], &xii[j]));
-        }
-    }
-}
-
 void run_sqr(void) {
     secp256k1_fe x, s;
 
@@ -2043,8 +2021,8 @@ void test_ge(void) {
             } else {
                 zs[i] = gej[i].z;
             }
+            secp256k1_fe_inv_var(&zinv[i], &zs[i]);
         }
-        secp256k1_fe_inv_all_var(zinv, zs, 4 * runs + 1);
         free(zs);
     }
 
@@ -2165,7 +2143,7 @@ void test_ge(void) {
             }
         }
         secp256k1_ge_set_table_gej_var(ge_set_table, gej, zr, 4 * runs + 1);
-        secp256k1_ge_set_all_gej_var(ge_set_all, gej, 4 * runs + 1, &ctx->error_callback);
+        secp256k1_ge_set_all_gej_var(ge_set_all, gej, 4 * runs + 1);
         for (i = 0; i < 4 * runs + 1; i++) {
             secp256k1_fe s;
             random_fe_non_zero(&s);
@@ -5080,7 +5058,6 @@ int main(int argc, char **argv) {
     /* field tests */
     run_field_inv();
     run_field_inv_var();
-    run_field_inv_all_var();
     run_field_misc();
     run_field_convert();
     run_sqr();
