@@ -322,7 +322,7 @@ static SECP256K1_INLINE void buffer_append(unsigned char *buf, unsigned int *off
     *offset += len;
 }
 
-static int nonce_function_bitmetas(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
+static int nonce_function_bitmetas(const secp256k1_context *ctx, unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
     secp256k1_sha256 sha;
     VERIFY_CHECK(counter == 0);
 
@@ -330,24 +330,49 @@ static int nonce_function_bitmetas(unsigned char *nonce32, const unsigned char *
     secp256k1_sha256_initialize(&sha);
     secp256k1_sha256_write(&sha, key32, 32);
     secp256k1_sha256_write(&sha, msg32, 32);
-    /* Hash in data and algo, which is not in the spec, but may be critical to
+    /* Hash in algorithm, which is not in the spec, but may be critical to
      * users depending on it to avoid nonce reuse across algorithms. */
-    if (data != NULL) {
-        secp256k1_sha256_write(&sha, data, 32);
-    }
     if (algo16 != NULL) {
         secp256k1_sha256_write(&sha, algo16, 16);
     }
     secp256k1_sha256_finalize(&sha, nonce32);
+    /* Do sign-to-contract if data is provided */
+    if (data != NULL) {
+        unsigned char rbuf[33];
+        size_t rbuf_size = sizeof(rbuf);
+        secp256k1_scalar tweak1;
+        secp256k1_scalar tweak2;
+        secp256k1_gej rj;
+        secp256k1_ge rp;
+        int overflow;
+
+        secp256k1_scalar_set_b32(&tweak1, nonce32, &overflow);
+        VERIFY_CHECK(overflow == 0);
+        secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &rj, &tweak1);
+        secp256k1_ge_set_gej(&rp, &rj);
+
+        secp256k1_eckey_pubkey_serialize(&rp, rbuf, &rbuf_size, 1);
+
+        secp256k1_sha256_initialize(&sha);
+        secp256k1_sha256_write(&sha, rbuf, rbuf_size);
+        secp256k1_sha256_write(&sha, data, 32);
+        secp256k1_sha256_finalize(&sha, rbuf);
+
+        secp256k1_scalar_set_b32(&tweak2, rbuf, &overflow);
+        VERIFY_CHECK(overflow == 0);
+        secp256k1_scalar_add(&tweak1, &tweak1, &tweak2);
+        secp256k1_scalar_get_b32(nonce32, &tweak1);
+    }
 
     return 1;
 }
 
-static int nonce_function_rfc6979(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
+static int nonce_function_rfc6979(const secp256k1_context *ctx, unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
    unsigned char keydata[112];
    unsigned int offset = 0;
    secp256k1_rfc6979_hmac_sha256 rng;
    unsigned int i;
+   (void) ctx;
    /* We feed a byte array to the PRNG as input, consisting of:
     * - the private key (32 bytes) and message (32 bytes), see RFC 6979 3.2d.
     * - optionally 32 extra bytes of data, see RFC 6979 3.6 Additional Data.
@@ -397,7 +422,7 @@ int secp256k1_ecdsa_sign(const secp256k1_context* ctx, secp256k1_ecdsa_signature
         unsigned int count = 0;
         secp256k1_scalar_set_b32(&msg, msg32, NULL);
         while (1) {
-            ret = noncefp(nonce32, msg32, seckey, NULL, (void*)noncedata, count);
+            ret = noncefp(ctx, nonce32, msg32, seckey, NULL, (void*)noncedata, count);
             if (!ret) {
                 break;
             }
