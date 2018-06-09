@@ -86,7 +86,7 @@ int secp256k1_musig_single_sign(const secp256k1_context* ctx, secp256k1_musig_si
         size_t buflen = sizeof(buf);
         secp256k1_scalar k;
 
-        ret = noncefp(buf, msg32, seckey, NULL, (void*)ndata, count);
+        ret = noncefp(ctx, buf, msg32, seckey, NULL, (void*)ndata, count);
         secp256k1_scalar_set_b32(&k, buf, NULL);
         ret &= !secp256k1_scalar_is_zero(&k);
 
