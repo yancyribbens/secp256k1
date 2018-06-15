@@ -14,6 +14,29 @@ typedef struct {
     unsigned char data[64];
 } secp256k1_musig_signature;
 
+/** Data structure containing data on other signers to be used during signing
+ *
+ * This structure is single-use. It is initialized with a missing signer's key
+ * shard, which should be stored securely and may be used for multiple signatures;
+ * or a present signer's nonce commitment, which will be single-use.
+ *
+ * Before signing, for each present signer, the structure is completed with
+ * that signer's actual public nonce.
+ *
+ * Use `secp256k1_musig_signer_data_initialize` to initialize
+ *
+ *   present: flag indicating whether the signer is present for this signature
+ *    pubnon: public nonce, must be a valid curvepoint if the signer is `present`
+ *  keyshard: shard of the signer's secret key, must be present if not `present`
+ * noncommit: pre-commitment to the nonce, used when adhering to the MuSig protocol
+ */
+typedef struct {
+    int present;
+    secp256k1_pubkey pubnon;
+    unsigned char keyshard[32];
+    unsigned char noncommit[32];
+} secp256k1_musig_signer_data;
+
 /** Serialize a MuSig signature
  *
  *  Returns: 1
@@ -123,6 +146,163 @@ SECP256K1_API int secp256k1_musig_single_sign(
     const void *ndata
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
+/** Generate a uniformly nonce for a MuSig multisignature or threshold signature
+ *
+ *  Returns 1 always.
+ *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
+ *  Out:  secnon: pointer to the returned secret nonce (cannot be NULL)
+ *        pubnon: returned public nonce (cannot be NULL)
+ *     noncommit: returned nonce commitment, if non-NULL
+ *  In:   seckey: secret signing key (cannot be NULL)
+ *         msg32: message to be signed (cannot be NULL)
+ *       rngseed: unique seed. Does not need to be random but MUST BE UNIQUE (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_multisig_generate_nonce(
+    const secp256k1_context* ctx,
+    unsigned char *secnon,
+    secp256k1_pubkey *pubnon,
+    unsigned char *noncommit,
+    const unsigned char *seckey,
+    const unsigned char *msg32,
+    const unsigned char *rngseed
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6);
+
+/** Initializes a signer data structure as "missing"
+ *
+ *  At most one of `keyshard` or `noncommit` must be NULL, depending if the signer
+ *  in question is present or missing. For multisignatures all signers are always
+ *  present. If `keyshard` is provided for a signer who turns out to be present,
+ *  it will be erased by `secp256k1_musig_set_nonce` after a valid public nonce
+ *  is received.
+ *
+ *  Always returns 1.
+ *  Args:    ctx: pointer to a context object (cannot be NULL)
+ *  In/Out: data: pointer to the signer data to initialize (cannot be NULL)
+ *  In: keyshard: shard of signer's secret key, if available, otherwise NULL
+ *      noncommit signer's nonce commitment, if available, otherwise NULL
+ */
+SECP256K1_API int secp256k1_musig_signer_data_initialize(
+    const secp256k1_context* ctx,
+    secp256k1_musig_signer_data *data,
+    const unsigned char *keyshard,
+    const unsigned char *noncommit
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2);
+
+/** Checks a signer's public nonce against a precommitment to said nonce, and update data structure if they match
+ *
+ *  Returns: 1: commitment was valid, data structure updated
+ *           0: commitment was valid, nothing happened
+ *  Args:    ctx: pointer to a context object (cannot be NULL)
+ *  In/Out: data: pointer to the signer data to update (cannot be NULL)
+ *  In:   pubnon: signer's alleged public nonce (cannot be NULL)
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_set_nonce(
+    const secp256k1_context* ctx,
+    secp256k1_musig_signer_data *data,
+    const secp256k1_pubkey *pubnon
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
+
+/** Split a key into shards suitable for distribution for a k-of-n signature
+ *
+ *  Returns: 1: key successfully split
+ *           0: invalid secret key
+ *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
+ *  Out:  shards: array of returned shards, which are each 32-byte unsigned char arrays (cannot be NULL)
+ *      pubshard: array of public shards, which are curvepoints (cannot be NULL)
+ *  In:   seckey: secret signing key to be split (cannot be NULL)
+ *             k: number of shards to be required when signing
+ *             n: number of signers; also the length of the `shards` array
+ *       rngseed: unique seed. Does not need to be random but MUST BE UNIQUE.
+                  May be the same as the one used in `secp256k1_musig_multisig_generate_nonce`. (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_keysplit(
+    const secp256k1_context* ctx,
+    unsigned char *const *shards,
+    secp256k1_pubkey *pubshard,
+    const unsigned char *seckey,
+    const size_t k,
+    const size_t n,
+    const unsigned char *rngseed
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(7);
+
+/** Verifies that a set of public shards is valid, and that a secret shard, if provided, is represented in the set
+ *
+ *  Returns: 1: public shard sum to the expected key, and the secret shard maps to the right public shard
+ *           0: one of the above wasn't true, or the secret shard was invalid
+ *  Args:    ctx: a secp256k1 context object, initialized for both signing and verification.
+ *       scratch: scratch space used for the multiexponentiation
+ *  In:   pubkey: public key of the signer who generated the public shards (cannot be NULL)
+ *         shard: secret shard provided by the signer to the verifier; will be checked if non-NULL
+ *        my_idx: index of verifier's shard in the following list of public shards
+ *      pubshard: list of public shards (cannot be NULL)
+ *   n_pubshards: number of shards in the above list
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_shard(
+    const secp256k1_context *ctx,
+    secp256k1_scratch_space *scratch,
+    const secp256k1_pubkey *pubkey,
+    const unsigned char *shard,
+    size_t my_idx,
+    const secp256k1_pubkey *pubshard,
+    size_t n_pubshards
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(6);
+
+/** Produces a partial signature
+ *
+ *  Returns: 1: partial signature constructed
+ *           0: invalid secret key, invalid keyshards, not enough signers and/or keyshards, calling signer not present
+ *  Args:    ctx: pointer to a context object (cannot be NULL)
+ *  Out:     sig: partial signature (cannot be NULL)
+ *  In:   seckey: secret signing key to use (cannot be NULL)
+ *   combined_pk: combined public key of all signers (cannot be NULL)
+ *           ell: hash of indiidual public keys (cannot be NULL)
+ *         msg32: message to be signed (cannot be NULL)
+ *        secnon: secret half of signer's nonce (cannot be NULL)
+ *          data: array of public nonces and/or keyshards of all signers (cannot be NULL)
+ *     n_signers: number of entries in the above array
+ *      my_index: index of the caller in the array of signer data
+ */
+SECP256K1_API int secp256k1_musig_partial_sign(
+    const secp256k1_context* ctx,
+    secp256k1_musig_signature *sig,
+    const unsigned char *seckey,
+    const secp256k1_pubkey *combined_pk,
+    const unsigned char *ell,
+    const unsigned char *msg32,
+    const unsigned char *secnon,
+    const secp256k1_musig_signer_data *data,
+    size_t n_signers,
+    size_t my_index
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6) SECP256K1_ARG_NONNULL(7) SECP256K1_ARG_NONNULL(8);
+
+/** Combines partial signatures
+ *
+ *  Returns: 1: all partial signatures had valid data. Does NOT mean the resulting signature is valid.
+ *           0: some partial signature had s/r out of range
+ *  Args:         ctx: pointer to a context object (cannot be NULL)
+ *  Out:          sig: complete signature (cannot be NULL)
+ *  In:   partial_sig: array of partial signatures to combine (cannot be NULL)
+ *             n_sigs: number of signatures in the above array
+ *              msg32: message that was signed, or NULL if Taproot is unused
+ *     pubkey_tweaked: the tweaked version of the combined public key, or NULL if Taproot is unused
+ *   pubkey_untweaked: the untweaked version of the combined public key, or NULL if Taproot is unused
+ *     taproot_commit: a 32-byte message the public key was Taproot-tweaked with, or NULL if Taproot is unused
+ *             hashfp: pointer to a hashing function. If NULL, secp256k1_taproot_hash_default is used
+ *             hdata: pointer to arbitrary data used by the Taproot hash function (can be NULL)
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_combine_partial_sigs(
+    const secp256k1_context* ctx,
+    secp256k1_musig_signature *sig,
+    secp256k1_musig_signature *partial_sig,
+    size_t n_sigs,
+    const unsigned char *msg32,
+    const secp256k1_pubkey *pk_tweaked,
+    const secp256k1_pubkey *pk_untweaked,
+    const unsigned char *taproot_commit,
+    secp256k1_taproot_hash_function hashfp,
+    void *hdata
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
+
 /** Verify a MuSig signature.
  *
  *  Returns: 1: correct signature
@@ -144,6 +324,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_1(
  * Returns 1 if all succeeded, 0 otherwise.
  *
  *  Args:    ctx: a secp256k1 context object, initialized for verification.
+ *       scratch: scratch space used for the multiexponentiation
  *  In:      sig: array of signatures, or NULL if there are no signatures
  *         msg32: array of messages, or NULL if there are no signatures
  *            pk: array of public keys, or NULL if there are no signatures
