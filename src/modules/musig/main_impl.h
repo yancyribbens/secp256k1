@@ -11,6 +11,14 @@
 #include "include/secp256k1_musig.h"
 #include "hash.h"
 
+/* Partial signature data structure:
+ * 32 bytes partial s
+ * 1 byte indicating whether the public nonce should be flipped
+ *
+ * Aux data structure:
+ * 32 bytes message hash
+ */
+
 static int taproot_hash_default(unsigned char *tweak32, const secp256k1_pubkey *pk, const unsigned char *commit, void *data) {
     unsigned char buf[33];
     size_t buflen = sizeof(buf);
@@ -232,6 +240,443 @@ int secp256k1_musig_single_sign(const secp256k1_context* ctx, secp256k1_musig_si
     return 1;
 }
 
+int secp256k1_musig_signer_data_initialize(const secp256k1_context* ctx, secp256k1_musig_signer_data *data, const secp256k1_pubkey *pubkey, const unsigned char *noncommit) {
+    (void) ctx;
+    ARG_CHECK(data != NULL);
+    ARG_CHECK(pubkey != NULL);
+    memset(data, 0, sizeof(*data));
+    memcpy(&data->pubkey, pubkey, sizeof(*pubkey));
+    if (noncommit != NULL) {
+        memcpy(data->noncommit, noncommit, 32);
+    }
+    return 1;
+}
+
+int secp256k1_musig_multisig_generate_nonce(const secp256k1_context* ctx, unsigned char *secnon, secp256k1_pubkey *pubnon, unsigned char *noncommit, const secp256k1_musig_secret_key *seckey, const unsigned char *msg32, const unsigned char *rngseed) {
+    unsigned char commit[33];
+    size_t commit_size = sizeof(commit);
+    secp256k1_sha256 sha;
+    secp256k1_scalar secs;
+    secp256k1_gej rj;
+    secp256k1_ge rp;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(secnon != NULL);
+    ARG_CHECK(pubnon != NULL);
+    ARG_CHECK(seckey != NULL);
+    ARG_CHECK(msg32 != NULL);
+    ARG_CHECK(rngseed != NULL);
+
+    secp256k1_sha256_initialize(&sha);
+    secp256k1_sha256_write(&sha, seckey->data, 32);
+    secp256k1_sha256_write(&sha, msg32, 32);
+    secp256k1_sha256_write(&sha, rngseed, 32);
+    secp256k1_sha256_finalize(&sha, secnon);
+
+    secp256k1_scalar_set_b32(&secs, secnon, NULL);
+    secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &rj, &secs);
+    secp256k1_ge_set_gej(&rp, &rj);
+    secp256k1_pubkey_save(pubnon, &rp);
+
+    if (noncommit != NULL) {
+        secp256k1_sha256_initialize(&sha);
+        secp256k1_ec_pubkey_serialize(ctx, commit, &commit_size, pubnon, SECP256K1_EC_COMPRESSED);
+        secp256k1_sha256_write(&sha, commit, commit_size);
+        secp256k1_sha256_finalize(&sha, noncommit);
+    }
+    return 1;
+}
+
+int secp256k1_musig_set_nonce(const secp256k1_context* ctx, secp256k1_musig_signer_data *data, const secp256k1_pubkey *pubnon) {
+    unsigned char commit[33];
+    size_t commit_size = sizeof(commit);
+    secp256k1_sha256 sha;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(data != NULL);
+    ARG_CHECK(pubnon != NULL);
+
+    secp256k1_sha256_initialize(&sha);
+    secp256k1_ec_pubkey_serialize(ctx, commit, &commit_size, pubnon, SECP256K1_EC_COMPRESSED);
+    secp256k1_sha256_write(&sha, commit, commit_size);
+    secp256k1_sha256_finalize(&sha, commit);
+
+    if (memcmp(commit, data->noncommit, 32) != 0) {
+        return 0;
+    }
+    memcpy(&data->pubnon, pubnon, sizeof(*pubnon));
+    data->present = 1;
+    return 1;
+}
+
+/* `data` is just used as a binary array indicating which signers are present, i.e.
+ * which ones to exclude from the interpolation. */
+static void secp256k1_musig_lagrange_coefficient(secp256k1_scalar *r, const secp256k1_musig_signer_data *data, size_t n_indices, size_t coeff_index, int invert) {
+    size_t i;
+    int kofn;
+    secp256k1_scalar num;
+    secp256k1_scalar den;
+    secp256k1_scalar indexs;
+
+    /* Special-case the n-of-n case where all our "Lagrange coefficients" should be 1,
+     * since in that case we do a simple sum rather than polynomial interpolation */
+    kofn = 0;
+    for (i = 0; i < n_indices; i++) {
+        if (data[i].present == 0) {
+            kofn = 1;
+            break;
+        }
+    }
+    if (!kofn) {
+        secp256k1_scalar_set_int(r, 1);
+        return;
+    }
+
+    secp256k1_scalar_set_int(&num, 1);
+    secp256k1_scalar_set_int(&den, 1);
+    secp256k1_scalar_set_int(&indexs, (int) coeff_index + 1);
+    for (i = 0; i < n_indices; i++) {
+        secp256k1_scalar mul;
+        if ((data[i].present == 0) || i == coeff_index) {
+            continue;
+        }
+
+        secp256k1_scalar_set_int(&mul, (int) i + 1);
+        secp256k1_scalar_negate(&mul, &mul);
+        secp256k1_scalar_mul(&num, &num, &mul);
+
+        secp256k1_scalar_add(&mul, &mul, &indexs);
+        secp256k1_scalar_mul(&den, &den, &mul);
+    }
+
+    if (invert) {
+        secp256k1_scalar_inverse_var(&num, &num);
+    } else {
+        secp256k1_scalar_inverse_var(&den, &den);
+    }
+    secp256k1_scalar_mul(r, &num, &den);
+}
+
+int secp256k1_musig_keysplit(const secp256k1_context *ctx, unsigned char *const *shards, secp256k1_pubkey *pubcoeff, const secp256k1_musig_secret_key *seckey, const size_t k, const size_t n, const unsigned char *rngseed) {
+    size_t i;
+    int overflow;
+    secp256k1_scalar init;
+    secp256k1_scalar rand[2];
+    secp256k1_gej rj;
+    secp256k1_ge rp;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(shards != NULL);
+    ARG_CHECK(pubcoeff != NULL);
+    ARG_CHECK(seckey != NULL);
+    ARG_CHECK(rngseed != NULL);
+
+    if (k == 0 || k >= n) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&init, seckey->data, &overflow);
+    /* Reject invalid secret keys */
+    if (overflow) {
+        return 0;
+    }
+
+    secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &rj, &init);
+    secp256k1_ge_set_gej(&rp, &rj);
+    secp256k1_pubkey_save(&pubcoeff[0], &rp);
+
+    for (i = 0; i < n; i++) {
+        secp256k1_scalar shard_i;
+        secp256k1_scalar scalar_i;
+        size_t j;
+
+        secp256k1_scalar_clear(&shard_i);
+        secp256k1_scalar_set_int(&scalar_i, i + 1);
+        for (j = 0; j < k - 1; j++) {
+            if (j % 2 == 0) {
+                secp256k1_scalar_chacha20(&rand[0], &rand[1], rngseed, j);
+            }
+            secp256k1_scalar_add(&shard_i, &shard_i, &rand[j % 2]);
+            secp256k1_scalar_mul(&shard_i, &shard_i, &scalar_i);
+        }
+        secp256k1_scalar_add(&shard_i, &shard_i, &init);
+        secp256k1_scalar_get_b32(shards[i], &shard_i);
+    }
+
+    for (i = 0; i < k-1; i++) {
+        if (i % 2 == 0) {
+            secp256k1_scalar_chacha20(&rand[0], &rand[1], rngseed, i);
+        }
+        secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &rj, &rand[i % 2]);
+        secp256k1_ge_set_gej(&rp, &rj);
+        secp256k1_pubkey_save(&pubcoeff[k - i - 1], &rp);
+    }
+
+    return 1;
+}
+
+typedef struct {
+    secp256k1_scalar idx;
+    secp256k1_scalar idxn;
+    const secp256k1_pubkey *pubcoeff;
+} secp256k1_musig_verify_shard_ecmult_context;
+
+static int secp256k1_musig_verify_shard_ecmult_callback(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
+    secp256k1_musig_verify_shard_ecmult_context *ctx = (secp256k1_musig_verify_shard_ecmult_context *) data;
+
+    *sc = ctx->idxn;
+    secp256k1_scalar_mul(&ctx->idxn, &ctx->idxn, &ctx->idx);
+    secp256k1_pubkey_load(NULL, pt, &ctx->pubcoeff[idx]);
+    return 1;
+}
+
+int secp256k1_musig_verify_shard(const secp256k1_context *ctx, secp256k1_scratch *scratch, secp256k1_musig_secret_key *seckey, secp256k1_pubkey *pubkey, size_t n_keys, int continuing, const unsigned char *privshard, size_t my_idx, const secp256k1_pubkey *pubcoeff, size_t n_coeffs) {
+    secp256k1_musig_verify_shard_ecmult_context ecmult_data;
+    size_t i;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(scratch != NULL);
+    ARG_CHECK(pubkey != NULL);
+    ARG_CHECK(pubcoeff != NULL);
+
+    ecmult_data.pubcoeff = pubcoeff;
+
+    /* For each participant... */
+    for (i = 0; i < n_keys; i++) {
+        secp256k1_ge shardp;
+        secp256k1_gej shardj;
+
+        /* ...compute the participant's public shard by evaluating the public polynomial at their index */
+        secp256k1_scalar_set_int(&ecmult_data.idx, i + 1);
+        secp256k1_scalar_set_int(&ecmult_data.idxn, 1);
+
+        if (!secp256k1_ecmult_multi_var(&ctx->ecmult_ctx, scratch, &shardj, NULL, secp256k1_musig_verify_shard_ecmult_callback, (void *) &ecmult_data, n_coeffs)) {
+            return 0;
+        }
+
+        /* If we computed our _own_ public shard, check that it is consistent with our private
+         * shard. This check is equation (*) in the Pedersen VSS paper. This is the only part
+         * of the function that handles secret data and which must be constant-time. */
+        if (i == my_idx && privshard != NULL) {
+            int overflow;
+            secp256k1_gej expectedj;
+            secp256k1_scalar shards;
+            secp256k1_scalar_set_b32(&shards, privshard, &overflow);
+            if (overflow) {
+                return 0;
+            }
+            secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &expectedj, &shards);
+            secp256k1_gej_neg(&expectedj, &expectedj);
+            secp256k1_gej_add_var(&expectedj, &expectedj, &shardj, NULL);
+            if (!secp256k1_gej_is_infinity(&expectedj)) {
+                return 0;
+            }
+
+            if (seckey != NULL) {
+                if (continuing) {
+                    secp256k1_scalar current;
+                    secp256k1_scalar_set_b32(&current, seckey->data, &overflow);
+                    if (overflow) {
+                        return 0;
+                    }
+                    secp256k1_scalar_add(&shards, &shards, &current);
+                }
+                secp256k1_scalar_get_b32(seckey->data, &shards);
+            }
+        }
+
+        /* Add the shard to the public key we expect them to use when signing (well, when
+         * signing they will additionally multiply the pubkey by a Lagrange coefficient,
+         * but this cannot be determined until signing time). */
+        if (continuing) {
+            secp256k1_ge ge;
+            if (!secp256k1_pubkey_load(ctx, &ge, &pubkey[i])) {
+                return 0;
+            }
+            secp256k1_gej_add_ge_var(&shardj, &shardj, &ge, NULL);
+        }
+        if (secp256k1_gej_is_infinity(&shardj)) {
+            return 0;
+        }
+        secp256k1_ge_set_gej(&shardp, &shardj);
+        secp256k1_pubkey_save(&pubkey[i], &shardp);
+    }
+
+    return 1;
+}
+
+typedef struct {
+    size_t index;
+    size_t n_signers;
+    const secp256k1_musig_signer_data *data;
+} secp256k1_musig_nonce_ecmult_context;
+
+static int secp256k1_musig_nonce_ecmult_callback(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
+    secp256k1_musig_nonce_ecmult_context *ctx = (secp256k1_musig_nonce_ecmult_context *) data;
+
+    (void) idx;
+    while (!ctx->data[ctx->index].present) {
+        ctx->index++;
+    }
+    secp256k1_musig_lagrange_coefficient(sc, ctx->data, ctx->n_signers, ctx->index, 0);
+    if (!secp256k1_pubkey_load(NULL, pt, &ctx->data[ctx->index].pubnon)) {
+        return 0;
+    }
+    ctx->index++;
+    return 1;
+}
+
+int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch_space *scratch, secp256k1_musig_partial_signature *sig, secp256k1_musig_validation_aux *aux, const secp256k1_musig_secret_key *seckey, const secp256k1_pubkey *combined_pk, const unsigned char *msg32, const unsigned char *secnon, const secp256k1_musig_signer_data *data, size_t n_signers, size_t my_index) {
+    secp256k1_musig_nonce_ecmult_context ecmult_data;
+    unsigned char buf[33];
+    size_t bufsize = 33;
+    secp256k1_gej total_rj;
+    secp256k1_ge total_r;
+    secp256k1_sha256 sha;
+    size_t i;
+    size_t n_present;
+    int overflow;
+    secp256k1_scalar sk;
+    secp256k1_scalar e, k;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(scratch != NULL);
+    ARG_CHECK(sig != NULL);
+    ARG_CHECK(aux != NULL);
+    ARG_CHECK(seckey != NULL);
+    ARG_CHECK(combined_pk != NULL);
+    ARG_CHECK(msg32 != NULL);
+    ARG_CHECK(secnon != NULL);
+    ARG_CHECK(data != NULL);
+
+    /* Should this be an ARG_CHECK ? */
+    if (!data[my_index].present) {
+        return 0;
+    }
+
+    secp256k1_scalar_set_b32(&sk, seckey->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+
+    secp256k1_scalar_set_b32(&k, secnon, &overflow);
+    if (overflow || secp256k1_scalar_is_zero(&k)) {
+        return 0;
+    }
+
+    /* compute aggregate R, saving partial-R in the partial_signature structure */
+    n_present = 0;
+    for (i = 0; i < n_signers; i++) {
+        if (data[i].present != 0) {
+            n_present++;
+        }
+    }
+    ecmult_data.index = 0;
+    ecmult_data.n_signers = n_signers;
+    ecmult_data.data = data;
+    if (!secp256k1_ecmult_multi_var(&ctx->ecmult_ctx, scratch, &total_rj, NULL, secp256k1_musig_nonce_ecmult_callback, (void *) &ecmult_data, n_present)) {
+        return 0;
+    }
+    if (secp256k1_gej_is_infinity(&total_rj)) {
+        return 0;
+    }
+    if (!secp256k1_gej_has_quad_y_var(&total_rj)) {
+        secp256k1_gej_neg(&total_rj, &total_rj);
+        secp256k1_scalar_negate(&k, &k);
+        sig->data[32] = 1;
+    } else {
+        sig->data[32] = 0;
+    }
+    secp256k1_ge_set_gej(&total_r, &total_rj);
+
+    /* build message hash */
+    secp256k1_sha256_initialize(&sha);
+    secp256k1_fe_normalize(&total_r.x);
+    secp256k1_fe_get_b32(buf, &total_r.x);
+    secp256k1_sha256_write(&sha, buf, 32);
+    memcpy(&aux->data[32], buf, 32);
+    secp256k1_ec_pubkey_serialize(ctx, buf, &bufsize, combined_pk, SECP256K1_EC_COMPRESSED);
+    VERIFY_CHECK(bufsize == 33);
+    secp256k1_sha256_write(&sha, buf, bufsize);
+    secp256k1_sha256_write(&sha, msg32, 32);
+    secp256k1_sha256_finalize(&sha, aux->data);
+
+    secp256k1_scalar_set_b32(&e, aux->data, NULL);
+
+    /* Sign */
+    secp256k1_scalar_mul(&e, &e, &sk);
+    secp256k1_scalar_add(&e, &e, &k);
+    secp256k1_scalar_get_b32(&sig->data[0], &e);
+    secp256k1_scalar_clear(&sk);
+    secp256k1_scalar_clear(&k);
+
+    return 1;
+}
+
+int secp256k1_musig_partial_sig_combine(const secp256k1_context* ctx, secp256k1_musig_signature *sig, const secp256k1_musig_partial_signature *partial_sig, size_t n_sigs, const secp256k1_musig_signer_data *data, size_t n_signers, const secp256k1_musig_validation_aux *aux, const unsigned char *taproot_tweak) {
+    size_t i, j;
+    secp256k1_scalar s;
+    secp256k1_ge rp;
+    secp256k1_gej rj;
+    (void) ctx;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(sig != NULL);
+    ARG_CHECK(partial_sig != NULL);
+    ARG_CHECK(data != NULL);
+    ARG_CHECK(aux != NULL);
+    ARG_CHECK(n_signers >= n_sigs);
+
+    secp256k1_scalar_clear(&s);
+    secp256k1_gej_set_infinity(&rj);
+    j = 0;
+    for (i = 0; i < n_signers; i++) {
+        int overflow;
+        secp256k1_scalar term;
+        secp256k1_scalar coeff;
+
+        if (!data[i].present) {
+            continue;
+        }
+
+        secp256k1_scalar_set_b32(&term, partial_sig[j].data, &overflow);
+        if (overflow) {
+            return 0;
+        }
+        if (!secp256k1_pubkey_load(ctx, &rp, &data[i].pubnon)) {
+            return 0;
+        }
+
+        secp256k1_musig_lagrange_coefficient(&coeff, data, n_signers, i, 0);
+        secp256k1_scalar_mul(&term, &term, &coeff);
+        secp256k1_scalar_add(&s, &s, &term);
+        j++;
+    }
+    if (j != n_sigs) {
+        return 0;
+    }
+
+    /* Add taproot tweak to final signature */
+    if (taproot_tweak != NULL) {
+        secp256k1_scalar tweaks;
+        secp256k1_scalar e;
+
+        secp256k1_scalar_set_b32(&tweaks, taproot_tweak, NULL);
+        secp256k1_scalar_set_b32(&e, aux->data, NULL);
+        secp256k1_scalar_mul(&tweaks, &tweaks, &e);
+        secp256k1_scalar_add(&s, &s, &tweaks);
+    }
+
+    memcpy(&sig->data[0], &aux->data[32], 32);
+    secp256k1_scalar_get_b32(&sig->data[32], &s);
+
+    return 1;
+}
+
 /* Helper function that computes R = sG - eP */
 static int secp256k1_musig_real_verify(const secp256k1_context* ctx, secp256k1_gej *rj, const secp256k1_scalar *s, const secp256k1_scalar *e, const secp256k1_pubkey *pk) {
     secp256k1_scalar nege;
@@ -247,6 +692,45 @@ static int secp256k1_musig_real_verify(const secp256k1_context* ctx, secp256k1_g
 
     secp256k1_ecmult(&ctx->ecmult_ctx, rj, &pkj, &nege, s);
     return 1;
+}
+
+int secp256k1_musig_partial_sig_verify(const secp256k1_context* ctx, const secp256k1_musig_partial_signature *partial_sig, const secp256k1_musig_signer_data *data, const secp256k1_musig_validation_aux *aux) {
+    secp256k1_scalar s;
+    secp256k1_scalar e;
+    secp256k1_gej rj;
+    secp256k1_ge rp;
+    int overflow;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(partial_sig != NULL);
+    ARG_CHECK(data != NULL);
+    ARG_CHECK(aux != NULL);
+
+    if (!data->present) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&s, partial_sig->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&e, aux->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    if (!secp256k1_pubkey_load(ctx, &rp, &data->pubnon)) {
+        return 0;
+    }
+
+    if (!secp256k1_musig_real_verify(ctx, &rj, &s, &e, &data->pubkey)) {
+        return 0;
+    }
+    if (!partial_sig->data[32]) {
+        secp256k1_ge_neg(&rp, &rp);
+    }
+    secp256k1_gej_add_ge_var(&rj, &rj, &rp, NULL);
+
+    return secp256k1_gej_is_infinity(&rj);
 }
 
 int secp256k1_musig_verify_1(const secp256k1_context* ctx, const secp256k1_musig_signature *sig, const unsigned char *msg32, const secp256k1_pubkey *pk) {
