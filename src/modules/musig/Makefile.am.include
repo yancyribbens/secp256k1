@@ -1,3 +1,8 @@
 include_HEADERS += include/secp256k1_musig.h
 noinst_HEADERS += src/modules/musig/main_impl.h
 noinst_HEADERS += src/modules/musig/tests_impl.h
+if USE_BENCHMARK
+noinst_PROGRAMS += bench_musig
+bench_musig_SOURCES = src/bench_musig.c
+bench_musig_LDADD = libsecp256k1.la $(SECP_LIBS) $(COMMON_LIB)
+endif
