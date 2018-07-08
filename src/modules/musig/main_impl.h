@@ -17,6 +17,7 @@
  *
  * Aux data structure:
  * 32 bytes message hash
+ * 32 bytes R.x
  */
 
 static int taproot_hash_default(unsigned char *tweak32, const secp256k1_pubkey *pk, const unsigned char *commit, void *data) {
@@ -529,7 +530,7 @@ static int secp256k1_musig_nonce_ecmult_callback(secp256k1_scalar *sc, secp256k1
     return 1;
 }
 
-int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch_space *scratch, secp256k1_musig_partial_signature *sig, secp256k1_musig_validation_aux *aux, const secp256k1_musig_secret_key *seckey, const secp256k1_pubkey *combined_pk, const unsigned char *msg32, const unsigned char *secnon, const secp256k1_musig_signer_data *data, size_t n_signers, size_t my_index) {
+int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch_space *scratch, secp256k1_musig_partial_signature *sig, secp256k1_musig_validation_aux *aux, const secp256k1_musig_secret_key *seckey, const secp256k1_pubkey *combined_pk, const unsigned char *msg32, const unsigned char *secnon, const secp256k1_musig_signer_data *data, size_t n_signers, size_t my_index, const unsigned char *sec_adaptor) {
     secp256k1_musig_nonce_ecmult_context ecmult_data;
     unsigned char buf[33];
     size_t bufsize = 33;
@@ -610,6 +611,15 @@ int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch
     /* Sign */
     secp256k1_scalar_mul(&e, &e, &sk);
     secp256k1_scalar_add(&e, &e, &k);
+    if (sec_adaptor != NULL) {
+        secp256k1_scalar offs;
+        secp256k1_scalar_set_b32(&offs, sec_adaptor, &overflow);
+        if (overflow) {
+            return 0;
+        }
+        secp256k1_scalar_negate(&offs, &offs);
+        secp256k1_scalar_add(&e, &e, &offs);
+    }
     secp256k1_scalar_get_b32(&sig->data[0], &e);
     secp256k1_scalar_clear(&sk);
     secp256k1_scalar_clear(&k);
@@ -677,6 +687,106 @@ int secp256k1_musig_partial_sig_combine(const secp256k1_context* ctx, secp256k1_
     return 1;
 }
 
+int secp256k1_musig_adaptor_signature_extract_secret(const secp256k1_context* ctx, unsigned char *sec_adaptor, const secp256k1_musig_signature *full_sig, const secp256k1_musig_partial_signature *partial_sig, const secp256k1_musig_partial_signature *adaptor_sig, const secp256k1_musig_validation_aux *aux, const unsigned char *taproot_tweak) {
+    secp256k1_scalar s;
+    secp256k1_scalar term;
+    int overflow;
+    (void) ctx;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(sec_adaptor != NULL);
+    ARG_CHECK(full_sig != NULL);
+    ARG_CHECK(partial_sig != NULL);
+    ARG_CHECK(adaptor_sig != NULL);
+    if (taproot_tweak != NULL) {
+        ARG_CHECK(aux != NULL);
+    }
+
+    secp256k1_scalar_set_b32(&s, &full_sig->data[32], &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&term, partial_sig->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_negate(&term, &term);
+    secp256k1_scalar_add(&s, &s, &term);
+    secp256k1_scalar_set_b32(&term, adaptor_sig->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_negate(&term, &term);
+    secp256k1_scalar_add(&s, &s, &term);
+
+    if (taproot_tweak != NULL) {
+        secp256k1_scalar tweaks;
+        secp256k1_scalar e;
+
+        secp256k1_scalar_set_b32(&tweaks, taproot_tweak, NULL);
+        secp256k1_scalar_set_b32(&e, aux->data, NULL);
+        secp256k1_scalar_mul(&tweaks, &tweaks, &e);
+        secp256k1_scalar_negate(&tweaks, &tweaks);
+        secp256k1_scalar_add(&s, &s, &tweaks);
+    }
+
+    secp256k1_scalar_get_b32(sec_adaptor, &s);
+    return 1;
+}
+
+int secp256k1_musig_adaptor_signature_adapt(const secp256k1_context* ctx, secp256k1_musig_partial_signature *partial_sig, const secp256k1_musig_partial_signature *adaptor_sig, const unsigned char *sec_adaptor) {
+    secp256k1_scalar s;
+    secp256k1_scalar t;
+    int overflow;
+
+    (void) ctx;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(partial_sig != NULL);
+    ARG_CHECK(adaptor_sig != NULL);
+    ARG_CHECK(sec_adaptor != NULL);
+
+    secp256k1_scalar_set_b32(&s, adaptor_sig->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&t, sec_adaptor, &overflow);
+    if (overflow) {
+        return 0;
+    }
+
+    secp256k1_scalar_add(&s, &s, &t);
+    secp256k1_scalar_get_b32(partial_sig->data, &s);
+    partial_sig->data[32] = adaptor_sig->data[32];
+
+    return 1;
+}
+
+int secp256k1_musig_adaptor_signature_apply_secret(const secp256k1_context* ctx, secp256k1_musig_signature *partial_sig, const secp256k1_musig_signature *adaptor_sig, const unsigned char *sec_adaptor) {
+    secp256k1_scalar s;
+    secp256k1_scalar term;
+    int overflow;
+    (void) ctx;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(partial_sig != NULL);
+    ARG_CHECK(adaptor_sig != NULL);
+    ARG_CHECK(sec_adaptor != NULL);
+
+    secp256k1_scalar_set_b32(&s, &adaptor_sig->data[32], &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&term, sec_adaptor, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_add(&s, &s, &term);
+
+    memcpy(&partial_sig->data[0], &adaptor_sig->data[0], 32);
+    secp256k1_scalar_get_b32(&partial_sig->data[32], &s);
+    return 1;
+}
+
 /* Helper function that computes R = sG - eP */
 static int secp256k1_musig_real_verify(const secp256k1_context* ctx, secp256k1_gej *rj, const secp256k1_scalar *s, const secp256k1_scalar *e, const secp256k1_pubkey *pk) {
     secp256k1_scalar nege;
@@ -691,6 +801,54 @@ static int secp256k1_musig_real_verify(const secp256k1_context* ctx, secp256k1_g
     secp256k1_gej_set_ge(&pkj, &pkp);
 
     secp256k1_ecmult(&ctx->ecmult_ctx, rj, &pkj, &nege, s);
+    return 1;
+}
+
+int secp256k1_musig_adaptor_signature_extract(const secp256k1_context* ctx, secp256k1_pubkey *pub_adaptor, const secp256k1_musig_partial_signature *partial_sig, const secp256k1_musig_signer_data *data, const secp256k1_musig_validation_aux *aux) {
+    secp256k1_scalar s;
+    secp256k1_scalar e;
+    secp256k1_gej rj;
+    secp256k1_ge rp;
+    int overflow;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(pub_adaptor != NULL);
+    ARG_CHECK(partial_sig != NULL);
+    ARG_CHECK(data != NULL);
+    ARG_CHECK(aux != NULL);
+
+    if (!data->present) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&s, partial_sig->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_scalar_set_b32(&e, aux->data, &overflow);
+    if (overflow) {
+        return 0;
+    }
+    secp256k1_pubkey_load(ctx, &rp, &data->pubkey);
+
+    if (!secp256k1_pubkey_load(ctx, &rp, &data->pubnon)) {
+        return 0;
+    }
+
+    if (!secp256k1_musig_real_verify(ctx, &rj, &s, &e, &data->pubkey)) {
+        return 0;
+    }
+    if (!partial_sig->data[32]) {
+        secp256k1_ge_neg(&rp, &rp);
+    }
+
+    secp256k1_gej_add_ge_var(&rj, &rj, &rp, NULL);
+    if (secp256k1_gej_is_infinity(&rj)) {
+        return 0;
+    }
+
+    secp256k1_ge_set_gej(&rp, &rj);
+    secp256k1_pubkey_save(pub_adaptor, &rp);
     return 1;
 }
 

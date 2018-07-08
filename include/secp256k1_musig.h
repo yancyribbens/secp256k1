@@ -360,6 +360,9 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_shard(
  *          data: array of public nonces and/or keyshards of all signers (cannot be NULL)
  *     n_signers: number of entries in the above array
  *      my_index: index of the caller in the array of signer data
+ *   sec_adaptor: secret value to be subtracted from the signature, if an adaptor
+ *                signature is to be produced. Should be set to NULL for a normal
+ *                partial signature.
  */
 SECP256K1_API int secp256k1_musig_partial_sign(
     const secp256k1_context* ctx,
@@ -372,7 +375,8 @@ SECP256K1_API int secp256k1_musig_partial_sign(
     const unsigned char *secnon,
     const secp256k1_musig_signer_data *data,
     size_t n_signers,
-    size_t my_index
+    size_t my_index,
+    const unsigned char *sec_adaptor
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6) SECP256K1_ARG_NONNULL(7) SECP256K1_ARG_NONNULL(8);
 
 /** Checks that an individual partial signature is valid
@@ -395,6 +399,40 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_verif
     const secp256k1_musig_partial_signature *partial_sig,
     const secp256k1_musig_signer_data *data,
     const secp256k1_musig_validation_aux *aux
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+
+/** Extracts the public tweak implied by an adaptor signature
+ *
+ *  Returns: 1: adaptor signature was correctly encoded and had nontrivial tweak
+ *           0: invalid adaptor signature or valid (untweaked) partial signature
+ *  Args:         ctx: pointer to a context object, initialized for verification (cannot be NULL)
+ *  Out:     pubtweak: public tweak (cannot be NULL)
+ *  In:   partial_sig: adaptor signature to extract tweak from (cannot be NULL)
+ *               data: signer data for this signer (not the whole array) (cannot be NULL)
+ *                aux: auxillary partial-signature validation data (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_adaptor_signature_extract(
+    const secp256k1_context* ctx,
+    secp256k1_pubkey *pub_adaptor,
+    const secp256k1_musig_partial_signature *partial_sig,
+    const secp256k1_musig_signer_data *data,
+    const secp256k1_musig_validation_aux *aux
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
+/** Converts an adaptor signature to a partial signature by adding a given tweak
+ *
+ *  Returns: 1: signature and tweak contained valid values
+ *           0: otherwise
+ *  Args:         ctx: pointer to a context object, initialized for verification (cannot be NULL)
+ *  Out:  partial_sig: partial signature to produce (cannot be NULL)
+ *  In:   adaptor_sig: adaptor signature to tweak (cannot be NULL)
+ *        sec_adaptor: tweak to apply
+ */
+SECP256K1_API int secp256k1_musig_adaptor_signature_adapt(
+    const secp256k1_context* ctx,
+    secp256k1_musig_partial_signature *partial_sig,
+    const secp256k1_musig_partial_signature *adaptor_sig,
+    const unsigned char *sec_adaptor
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
 /** Combines partial signatures
@@ -420,6 +458,45 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_combi
     const secp256k1_musig_validation_aux *aux,
     const unsigned char *taproot_tweak
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(7);
+
+/** Extracts a secret from a complete signature and an earlier-received adaptor signature
+ *
+ *  Returns: 1: successfully extracted the secret
+ *           0: signatures were invalid or didn't have same nonce
+ *  Args:         ctx: pointer to a context object (cannot be NULL)
+ *  Out:  sec_adaptor: pointer to array to be filled with 32-byte extracted secret (cannot be NULL)
+ *  In:      full_sig: complete signature (cannot be NULL)
+ *        partial_sig: partial non-adaptor signature (in a many-party scheme this should be the
+ *                     sum of all partial signatures that are not the adaptor signature) (cannot be NULL)
+ *        adaptor_sig: adaptor signature to extract secret from (cannot be NULL)
+ *                aux: auxillary data from `partial_sign` (cannot be NULL if Taproot is used)
+ *      taproot_tweak: the Taproot tweak from `pubkey_combine`, or NULL if Taproot is unused
+ */
+SECP256K1_API int secp256k1_musig_adaptor_signature_extract_secret(
+    const secp256k1_context* ctx,
+    unsigned char *sec_adaptor,
+    const secp256k1_musig_signature *full_sig,
+    const secp256k1_musig_partial_signature *partial_sig,
+    const secp256k1_musig_partial_signature *adaptor_sig,
+    const secp256k1_musig_validation_aux *aux,
+    const unsigned char *taproot_tweak
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
+/** Uses a secret to adapt an adaptor signature into a partial signature
+ *
+ *  Returns: 1: success
+ *           0: invalid adaptor signature or secret
+ *  Args:         ctx: pointer to a context object (cannot be NULL)
+ *  Out:  partial_sig: partial signature (cannot be NULL)
+ *  In:   adaptor_sig: adaptor signature (cannot be NULL)
+ *        sec_adaptor: secret to tweak adaptor signature with (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_adaptor_signature_apply_secret(
+    const secp256k1_context* ctx,
+    secp256k1_musig_signature *partial_sig,
+    const secp256k1_musig_signature *adaptor_sig,
+    const unsigned char *sec_adaptor
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
 /** Verify a MuSig signature.
  *
