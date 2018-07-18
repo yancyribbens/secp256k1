@@ -63,6 +63,22 @@ should be published to all signers, who should verify somehow that they
 all received the same set. They can verify the set itself, and that their
 secret shard is represented in it, with `secp256k1_musig_verify_shard`.
 
+Key Generation Flowchart:
+```
+Me:                  Others:
+
+ec_pubkey_create ->
+                  <- ec_pubkey_create
+pubkey_combine
+
+if k < n {
+keysplit         ->
+                  <- keysplit
+verify_shard
+}
+```
+
+
 ### Signing Procedure
 
 To produce a signature, each signer `i` acts as follows.
@@ -96,9 +112,23 @@ To produce a signature, each signer `i` acts as follows.
        `secp256k1_musig_combine_partial_sigs`. The output of this function is a
        complete signature.
 
+Signing Procedure Flowchart:
+```
+Me:                           Others:
+
+multisig_generate_nonce C ->
+                           <- multisig_generate_nonce C
+signer_data_initialize
+R                         ->
+                           <- R
+partial_sign              ->
+                           <- partial_sign
+combine_partial_sigs
+```
+
 ### Underlying Algebra
 
-#### Multisigantures
+#### Multisignatures
 
 In the case of multisignatures, i.e. `n`-of-`n` threshold signatures, the algebra
 is very simple. In `secp256k1_musig_partial_sign`, all participants' public nonces
