@@ -54,6 +54,109 @@ int secp256k1_musig_signature_parse(const secp256k1_context* ctx, secp256k1_musi
     return 1;
 }
 
+static void secp256k1_musig_coefficient(secp256k1_scalar *r, const unsigned char *ell, size_t idx) {
+    secp256k1_sha256 sha;
+    unsigned char buf[32];
+    secp256k1_sha256_initialize(&sha);
+    secp256k1_sha256_write(&sha, ell, 32);
+    while (idx > 0) {
+        unsigned char c = idx;
+        secp256k1_sha256_write(&sha, &c, 1);
+        idx /= 0x100;
+    }
+    secp256k1_sha256_finalize(&sha, buf);
+
+    secp256k1_scalar_set_b32(r, buf, NULL);
+}
+
+static int secp256k1_musig_compute_ell(const secp256k1_context *ctx, unsigned char *ell, const secp256k1_pubkey *pk, size_t np) {
+    secp256k1_sha256 sha;
+    size_t i;
+
+    secp256k1_sha256_initialize(&sha);
+    for (i = 0; i < np; i++) {
+        unsigned char ser[33];
+        size_t serlen = sizeof(ser);
+        if (!secp256k1_ec_pubkey_serialize(ctx, ser, &serlen, &pk[i], SECP256K1_EC_COMPRESSED)) {
+            return 0;
+        }
+        secp256k1_sha256_write(&sha, ser, serlen);
+    }
+    secp256k1_sha256_finalize(&sha, ell);
+    return 1;
+}
+
+int secp256k1_musig_pubkey_combine(const secp256k1_context* ctx, secp256k1_pubkey *tweaked_pk, secp256k1_pubkey *combined_pk, const secp256k1_pubkey *pk, size_t np) {
+    size_t i;
+    unsigned char ell[32];
+    secp256k1_gej musigj;
+    secp256k1_ge musigp;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(combined_pk != NULL);
+    ARG_CHECK(pk != NULL);
+
+    if (!secp256k1_musig_compute_ell(ctx, ell, pk, np)) {
+        return 0;
+    }
+
+    secp256k1_gej_set_infinity(&musigj);
+    for (i = 0; i < np; i++) {
+        secp256k1_gej termj;
+        secp256k1_gej pkj;
+        secp256k1_ge pkp;
+        secp256k1_scalar mc;
+
+        if (!secp256k1_pubkey_load(ctx, &pkp, &pk[i])) {
+            return 0;
+        }
+        secp256k1_gej_set_ge(&pkj, &pkp);
+        secp256k1_musig_coefficient(&mc, ell, i);
+        secp256k1_ecmult(&ctx->ecmult_ctx, &termj, &pkj, &mc, NULL);
+
+        secp256k1_gej_add_var(&musigj, &musigj, &termj, NULL);
+
+        if (tweaked_pk != NULL) {
+            secp256k1_ge_set_gej(&pkp, &termj);
+            secp256k1_pubkey_save(&tweaked_pk[i], &pkp);
+        }
+    }
+    if (secp256k1_gej_is_infinity(&musigj)) {
+        return 0;
+    }
+
+    secp256k1_ge_set_gej(&musigp, &musigj);
+    secp256k1_pubkey_save(combined_pk, &musigp);
+    return 1;
+}
+
+int secp256k1_musig_tweak_secret_key(const secp256k1_context* ctx, secp256k1_musig_secret_key *out, const unsigned char *seckey, const secp256k1_pubkey *pk, size_t np, size_t my_index) {
+    int overflow;
+    unsigned char ell[32];
+    secp256k1_scalar x, y;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(out != NULL);
+    ARG_CHECK(seckey != NULL);
+    ARG_CHECK(pk != NULL);
+
+    secp256k1_scalar_set_b32(&x, seckey, &overflow);
+    if (overflow) {
+        return 0;
+    }
+
+    if (!secp256k1_musig_compute_ell(ctx, ell, pk, np)) {
+        return 0;
+    }
+    secp256k1_musig_coefficient(&y, ell, my_index);
+
+    secp256k1_scalar_mul(&x, &x, &y);
+    secp256k1_scalar_get_b32(out->data, &x);
+
+    return 1;
+}
+
 int secp256k1_musig_single_sign(const secp256k1_context* ctx, secp256k1_musig_signature *sig, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function noncefp, const void *ndata) {
     secp256k1_scalar x;
     int overflow;
@@ -254,6 +357,129 @@ static int secp256k1_musig_verify_ecmult_callback(secp256k1_scalar *sc, secp256k
     }
 
     return 1;
+}
+
+int secp256k1_musig_verify(const secp256k1_context* ctx, secp256k1_scratch *scratch, const secp256k1_musig_signature *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs, const secp256k1_pubkey *const *taproot_untweaked, const secp256k1_pubkey *const *taproot_tweaked, const unsigned char *const *tweak32, size_t n_tweaks, secp256k1_taproot_hash_function hashfp, void *hdata) {
+    secp256k1_musig_verify_ecmult_context ecmult_data;
+    size_t i;
+    secp256k1_sha256 sha;
+    secp256k1_scalar s;
+    secp256k1_gej rj;
+    int ret = 1;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(scratch != NULL);
+    if (n_sigs > 0) {
+        ARG_CHECK(sig != NULL);
+        ARG_CHECK(msg32 != NULL);
+        ARG_CHECK(pk != NULL);
+    }
+    if (n_tweaks > 0) {
+        ARG_CHECK(taproot_untweaked != NULL);
+        ARG_CHECK(taproot_tweaked != NULL);
+        ARG_CHECK(tweak32 != NULL);
+    }
+
+    secp256k1_sha256_initialize(&sha);
+    for (i = 0; i < n_sigs; i++) {
+        secp256k1_sha256_write(&sha, sig[i]->data, 64);
+    }
+    for (i = 0; i < n_tweaks; i++) {
+        unsigned char buf[33];
+        size_t buflen = sizeof(buf);
+        ARG_CHECK(taproot_untweaked != NULL);
+        ARG_CHECK(taproot_tweaked != NULL);
+        ARG_CHECK(tweak32 != NULL);
+
+        secp256k1_sha256_write(&sha, tweak32[i], 32);
+        secp256k1_ec_pubkey_serialize(ctx, buf, &buflen, taproot_untweaked[i], SECP256K1_EC_COMPRESSED);
+        secp256k1_sha256_write(&sha, buf, 33);
+        secp256k1_ec_pubkey_serialize(ctx, buf, &buflen, taproot_tweaked[i], SECP256K1_EC_COMPRESSED);
+        secp256k1_sha256_write(&sha, buf, 33);
+    }
+    secp256k1_sha256_finalize(&sha, ecmult_data.chacha_seed);
+    ecmult_data.ctx = ctx;
+    ecmult_data.sig = sig;
+    ecmult_data.msg32 = msg32;
+    ecmult_data.pk = pk;
+    ecmult_data.n_sigs = n_sigs;
+
+    secp256k1_scalar_clear(&s);
+
+    if (n_tweaks > 0) {
+        secp256k1_gej *tmpj;
+
+        if (secp256k1_scratch_allocate_frame(scratch, n_tweaks * sizeof(secp256k1_ge), 1) == 0) {
+            return 0;
+        }
+        ecmult_data.taproot_pkdiff = (secp256k1_ge *)secp256k1_scratch_alloc(scratch, n_tweaks * sizeof(secp256k1_ge));
+
+        if (secp256k1_scratch_allocate_frame(scratch, n_tweaks * sizeof(secp256k1_gej), 1) == 0) {
+            secp256k1_scratch_deallocate_frame(scratch);
+            return 0;
+        }
+        tmpj = (secp256k1_gej *)secp256k1_scratch_alloc(scratch, n_tweaks * sizeof(*tmpj));
+
+        if (hashfp == NULL) {
+            hashfp = secp256k1_taproot_hash_default;
+        }
+
+        for (i = 0; i < n_tweaks; i++) {
+            secp256k1_ge untweaked;
+            secp256k1_ge tweaked;
+            unsigned char tweak[32];
+            secp256k1_scalar tweaks;
+
+            /* compute tweaked - untweaked point */
+            secp256k1_pubkey_load(ctx, &untweaked, taproot_untweaked[i]);
+            secp256k1_pubkey_load(ctx, &tweaked, taproot_tweaked[i]);
+
+            secp256k1_gej_set_ge(&tmpj[i], &tweaked);
+            secp256k1_gej_neg(&tmpj[i], &tmpj[i]);
+            secp256k1_gej_add_ge_var(&tmpj[i], &tmpj[i], &untweaked, NULL);
+
+            /* compute (rerandomized) addition to s */
+            if (i % 2 == 0) {
+                secp256k1_musig_batch_randomizer(ecmult_data.randomizer_cache, ecmult_data.chacha_seed, n_sigs + i / 2);
+            }
+            if(!hashfp(tweak, taproot_untweaked[i], tweak32[i], hdata)) {
+                secp256k1_scratch_deallocate_frame(scratch);
+                secp256k1_scratch_deallocate_frame(scratch);
+                return 0;
+            }
+            secp256k1_scalar_set_b32(&tweaks, tweak, NULL);
+            secp256k1_scalar_mul(&tweaks, &tweaks, &ecmult_data.randomizer_cache[i % 2]);
+            secp256k1_scalar_add(&s, &s, &tweaks);
+        }
+        secp256k1_ge_set_all_gej_var(ecmult_data.taproot_pkdiff, tmpj, n_tweaks);
+        secp256k1_scratch_deallocate_frame(scratch);
+    }
+
+    for (i = 0; i < n_sigs; i++) {
+        int overflow;
+        secp256k1_scalar term;
+        if (i % 2 == 0) {
+            secp256k1_musig_batch_randomizer(ecmult_data.randomizer_cache, ecmult_data.chacha_seed, i / 2);
+        }
+
+        secp256k1_scalar_set_b32(&term, &sig[i]->data[32], &overflow);
+        if (overflow) {
+            ret = 0;
+            break;
+        }
+        secp256k1_scalar_mul(&term, &term, &ecmult_data.randomizer_cache[i % 2]);
+        secp256k1_scalar_add(&s, &s, &term);
+    }
+
+    ret &= secp256k1_ecmult_multi_var(&ctx->ecmult_ctx, scratch, &rj, &s, secp256k1_musig_verify_ecmult_callback, (void *) &ecmult_data, 2 * n_sigs + n_tweaks);
+    ret &= secp256k1_gej_is_infinity(&rj);
+
+    if (n_tweaks > 0) {
+        secp256k1_scratch_deallocate_frame(scratch);
+    }
+
+    return ret;
 }
 
 #endif

@@ -14,6 +14,17 @@ typedef struct {
     unsigned char data[64];
 } secp256k1_musig_signature;
 
+/** Secret key tweaked for MuSig. Create with `secp256k1_musig_tweak_secret_key`.
+ *
+ * This data structure is not opaque. It is guaranteed to be a 32-byte secret key
+ * that works anywhere that ordinary secret keys may be used. It is a separate
+ * type to help prevent API users mistakenly using untweaked secret keys with
+ * MuSig, which would result in mysteriously invalid signatures being produced.
+ */
+typedef struct {
+    unsigned char data[32];
+} secp256k1_musig_secret_key;
+
 /** Serialize a MuSig signature
  *
  *  Returns: 1
@@ -75,7 +86,50 @@ typedef int (*secp256k1_taproot_hash_function)(
  *  directly for use with single_sign. */
 SECP256K1_API extern const secp256k1_taproot_hash_function secp256k1_taproot_hash_default;
 
-/** Create a single-signer MuSig signature with a pre-tweaked (or untweaked) secret key
+/** Creates a MuSig pubkey from a set of public keys and optionally a Taproot tweak
+ *
+ * Users who want to use Taproot without MuSig, i.e. a single-signer pay-to-contract,
+ * are better off manually computing the tweak and using `secp256k1_ec_privkey_tweak_add`
+ * and `secp256k1_ec_pubkey_tweak_add` to modify their keys. Otherwise they will need
+ * to use the full multisigning API which would be pointlessly inconvenient.
+ *
+ * Returns 1 on success, 0 on failure.
+ *
+ *  Args:    ctx: pointer to a context object, initialized for verification (cannot be NULL)
+ *  Out:  tweaked_pk: if non-NULL, filled with individual signers' tweaked public keys
+ *       combined_pk: tweaked MuSig pubkey, including Taproot commitment if present (cannot be NULL)
+ *  In:       pk: input public keys (cannot be NULL)
+ *            np: number of keys in the above array
+ */
+SECP256K1_API int secp256k1_musig_pubkey_combine(
+    const secp256k1_context* ctx,
+    secp256k1_pubkey *tweaked_pk,
+    secp256k1_pubkey *combined_pk,
+    const secp256k1_pubkey *pk,
+    size_t np
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(3);
+
+/** Computes a MuSig multiplier and multiplies a secret key by it.
+ *
+ * Returns 1 on success, 0 if any input was invalid.
+ *
+ *  Args:    ctx: pointer to a context object (cannot be NULL)
+ *  Out:     out: tweaked MuSig secret key (cannot be NULL)
+ *  In:   seckey: unmodified secret key (cannot be NULL)
+ *            pk: input public keys (cannot be NULL)
+ *            np: number of keys in the above array
+ *      my_index: index of signer (should be consistent with 0-indexed signer data array used in other functions)
+ */
+SECP256K1_API int secp256k1_musig_tweak_secret_key(
+    const secp256k1_context* ctx,
+    secp256k1_musig_secret_key *out,
+    const unsigned char *seckey,
+    const secp256k1_pubkey *pk,
+    size_t np,
+    size_t my_index
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+
+/** Create a single-signer MuSig signature with a pre-Taproot-tweaked (or untweaked) secret key
  *
  * Returns 1 on success, 0 on failure.
  *
@@ -110,5 +164,35 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_1(
     const unsigned char *msg32,
     const secp256k1_pubkey *pubkey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+
+/** Verifies a set of MuSig signatures and Taproot commitments
+ *
+ * Returns 1 if all succeeded, 0 otherwise.
+ *
+ *  Args:    ctx: a secp256k1 context object, initialized for verification.
+ *  In:      sig: array of signatures, or NULL if there are no signatures
+ *         msg32: array of messages, or NULL if there are no signatures
+ *            pk: array of public keys, or NULL if there are no signatures
+ *        n_sigs: number of signatures in above arrays (must be 0 if they are NULL)
+ *  taproot_untweaked: array of "bare" Taproot keys, or NULL if there are no Taproot commitments
+ *    taproot_tweaked: array of Taproot keys, or NULL if there are no Taproot commitments
+ *            tweak32: array of committed data, or NULL if there are no Taproot commitments
+ *        hashfp: function to use when computing Taproot commitments, or NULL to use the default
+ *         hdata: extra data to pass to `hashfp`, ignored by the default function
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify(
+    const secp256k1_context* ctx,
+    secp256k1_scratch_space *scratch,
+    const secp256k1_musig_signature *const *sig,
+    const unsigned char *const *msg32,
+    const secp256k1_pubkey *const *pk,
+    size_t n_sigs,
+    const secp256k1_pubkey *const *taproot_untweaked,
+    const secp256k1_pubkey *const *taproot_tweaked,
+    const unsigned char *const *tweak32,
+    size_t n_tweaks,
+    secp256k1_taproot_hash_function hashfp,
+    void *hdata
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2);
 
 #endif
