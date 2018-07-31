@@ -166,25 +166,25 @@ recall terminology, signer `i` has tweaked secret key `y_i`, tweaked public key
 `Y_i`, and the total key is `P = sum_i Y_i` with the sum taken over all signers.
 
 When splitting her secret key `y_i`, signer `i` calls `secp256k1_musig_keysplit`,
-which outputs two things. First, a set of _private shards_ `y_i^j`, one for each
+which outputs two things. First, a set of _private shards_ `y_i,j`, one for each
 signer `j`, which satisfies the following equation
 
-    y_i = sum_j L^j * y_i^j                              (1)
+    y_i = sum_j L_j * y_i,j                              (1)
 
-with the sum taken any subset of `k` or more signers. The coefficients `L^j`
+with the sum taken any subset of `k` or more signers. The coefficients `L_j`
 depend on the subset chosen, but the shards and total key do not. The details
 of determining these coefficients are given in the next section.
 
 Second, `secp256k1_musig_keysplit` outputs a set of _public coefficients_,
 which are curvepoints `P_n` satisfying
 
-    y_i^j*G = sum_{n=0}^{k-1} j^n*P_n                    (2)
+    y_i,j*G = sum_{n=0}^{k-1} j^n * P_n                    (2)
 
 This is equation `(*)` from [3]. What `secp256k1_musig_verify_shard` does is
-to check this equation for the shard `y_i^j` that signer `j` has possession
+to check this equation for the shard `y_i,j` that signer `j` has possession
 of, and also uses the equation to compute
 
-    Z_j = sum_i y_i^j*G                                  (3)
+    Z_j = sum_i y_i,j*G                                  (3)
 
 That is, `secp256k1_musig_verify_shard` computes the public key equivalent
 of all signers' shards of all signers keys, checks that the caller's private
@@ -194,14 +194,14 @@ Assuming all signers see the same set of coefficents `P_n`, they will all
 compute the same set of points `Z_j`. Signer `j` will find that the sum of
 her private shards is the discrete logarithm of `Z_j`, and that in general
 
-    P = sum_j L^j * Z_j                                  (4)
+    P = sum_j L_j * Z_j                                  (4)
 
 That is, these public points `Z_j` satisfy the same summation equation as
 the individual shares. This can be easily derived:
 
-    sum_j L^j * Z_j
-        = sum_j L^j * sum_i y_i^j * G
-        = sum_i [sum_j L^j y_i^j] * G
+    sum_j L_j * Z_j
+        = sum_j L_j * sum_i y_i,j * G
+        = sum_i [sum_j L_j y_i,j] * G
         = sum_i y_i * G
         = P
 
@@ -211,12 +211,12 @@ computed by everyone.
 
 During signing, `secp256k1_musig_signer_data_initialize` and `secp256k1_musig_set_nonce`
 track which signers are present and which are missing. If at least `k` signers are
-present, this uniquely determines a set `L^j` of Lagrange coefficients.
+present, this uniquely determines a set `L_j` of Lagrange coefficients.
 
 Each signer `j` calls `secp256k1_musig_partial_sign` to sign. When computing the
 total nonce, it uses the equation
 
-    R = sum_j L^j * R_j
+    R = sum_j L_j * R_j
 
 where the sum is over all present signer, and each `R_j` is a signer's public nonce.
 The signature is computed as
@@ -224,49 +224,49 @@ The signature is computed as
     s_j = k_j + z_j * e
 
 Finally, in `secp256k1_musig_combine_partial_sigs`, each signature is multiplied by
-`L^j`, resulting in a total signature that satisfies
+`L_j`, resulting in a total signature that satisfies
 
-    s*G = sum_j L^j * s_j * G
-        = sum_j L^j * k_j * G + e * sum_j L^j * z_j * G
-        = sum_j L^j * R_j + e * sum_j L^j * Z_j
+    s*G = sum_j L_j * s_j * G
+        = sum_j L_j * k_j * G + e * sum_j L_j * z_j * G
+        = sum_j L_j * R_j + e * sum_j L_j * Z_j
         = R + e * P
 
 #### Lagrange Coefficients
 
-It remains to describe in a bit more detail how the coefficients `L^j`, called
+It remains to describe in a bit more detail how the coefficients `L_j`, called
 called _Lagrange coefficients_, are actually computed. Essentially, they come
 from the formula for Lagrange interpolation given in [4].
 
 When the `i`th signer calls `secp256k1_musig_pubkey_combine`, a uniformly
-random polynomial `p^i` of degree `k-1` is chosen such that `p^i(0) = y_i`.
-The public coefficients `P_n^i` are simply the coefficients of this polynomial
-multiplied by G; observe that `P^i_0 = p^i(0)*G = Y_i`.
+random polynomial `p_i` of degree `k-1` is chosen such that `p_i(0) = y_i`.
+The public coefficients `P_i,n` are simply the coefficients of this polynomial
+multiplied by G; observe that `P_i,0 = p_i(0)*G = Y_i`.
 
 The private shard given to signer `j` is simply `p(j)`. Knowing this, and
 the fact that `y_i = p(0)`, we see that equation (1) is a direct application
 of the Lagrgange interpolation formula, while equation (2) is just
 
-    p^i(x) * G = sum_n x^n * P^i_n
+    p_i(x) * G = sum_n x_n * P_i,n
 
 evaluated at `j`.
 
 Now, let
 
-    P(x) = sum_i P^i(x)
+    P(x) = sum_i P_i(x)
 
 where the sum is taken over all signers; then
 
-    P(0) = sum_i P^i(0) = sum_i Y_i = P
+    P(0) = sum_i P_i(0) = sum_i Y_i = P
 
 and equation (3) becomes
 
-    Z_j = sum_i y_i^j*G = sum_i p^i(j)*G = p(j)*G
+    Z_j = sum_i y_i,j*G = sum_i p_i(j)*G = p(j)*G
 
 i.e. the `Z_j`s are just evaluations of the sum polynomial `p`, whose 0th
 coefficient is the total public key. Of course Lagrange interpolation applies
-to this just as it did to the `p^i`s, which gives us equation (4)
+to this just as it did to the `p_i`s, which gives us equation (4)
 
-    P = sum_j L^j * Z_j
+    P = sum_j L_j * Z_j
 
 from which we concluded that the `Z_j`s were public shards of `P`.
 
