@@ -221,13 +221,13 @@ total nonce, it uses the equation
 where the sum is over all present signer, and each `R_j` is a signer's public nonce.
 The signature is computed as
 
-    s_j = k_j + x_j * e
+    s_j = k_j + z_j * e
 
 Finally, in `secp256k1_musig_combine_partial_sigs`, each signature is multiplied by
 `L^j`, resulting in a total signature that satisfies
 
     s*G = sum_j L^j * s_j * G
-        = sum_j L^j * k_j * G + e * sum_j L^j * x_j * G
+        = sum_j L^j * k_j * G + e * sum_j L^j * z_j * G
         = sum_j L^j * R_j + e * sum_j L^j * Z_j
         = R + e * P
 
