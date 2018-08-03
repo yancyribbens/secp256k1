@@ -530,7 +530,7 @@ static int secp256k1_musig_nonce_ecmult_callback(secp256k1_scalar *sc, secp256k1
     return 1;
 }
 
-int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch_space *scratch, secp256k1_musig_partial_signature *sig, secp256k1_musig_validation_aux *aux, const secp256k1_musig_secret_key *seckey, const secp256k1_pubkey *combined_pk, const unsigned char *msg32, const unsigned char *secnon, const secp256k1_musig_signer_data *data, size_t n_signers, size_t my_index, const unsigned char *sec_adaptor) {
+int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch_space *scratch, secp256k1_musig_partial_signature *sig, secp256k1_musig_validation_aux *aux, unsigned char *secnon, const secp256k1_musig_secret_key *seckey, const secp256k1_pubkey *combined_pk, const unsigned char *msg32, const secp256k1_musig_signer_data *data, size_t n_signers, size_t my_index, const unsigned char *sec_adaptor) {
     secp256k1_musig_nonce_ecmult_context ecmult_data;
     unsigned char buf[33];
     size_t bufsize = 33;
@@ -623,6 +623,10 @@ int secp256k1_musig_partial_sign(const secp256k1_context* ctx, secp256k1_scratch
     secp256k1_scalar_get_b32(&sig->data[0], &e);
     secp256k1_scalar_clear(&sk);
     secp256k1_scalar_clear(&k);
+    /* Set secnon to zero such that consecutive partial signing attempts fail */
+    if (sec_adaptor == NULL) {
+        secp256k1_scalar_get_b32(secnon, &k);
+    }
 
     return 1;
 }

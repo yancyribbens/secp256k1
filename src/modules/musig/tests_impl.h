@@ -17,6 +17,8 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     unsigned char msg[32];
     unsigned char secnon1[32];
     unsigned char secnon3[32];
+    unsigned char secnon_tmp[32];
+    unsigned char zeros[32] = { 0 };
     unsigned char noncom1[32];
     unsigned char noncom3[32];
     unsigned char sig64[64];
@@ -294,30 +296,36 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     CHECK(ecount == 2);
 
     ecount = 0;
-    CHECK(secp256k1_musig_partial_sign(none, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, msg, secnon1, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(none, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 1);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, msg, secnon1, signer_data, 3, 0, NULL) == 1);
-    CHECK(secp256k1_musig_partial_sign(vrfy, NULL, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, msg, secnon1, signer_data, 3, 0, NULL) == 0);
+    /* Use temporary secnon, because it will be zeroed during a successful partial sign */
+    memcpy(secnon_tmp, secnon1, 32);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon_tmp, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(vrfy, NULL, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, NULL, &aux, &tweak_sk[0], &combine_pk, msg, secnon1, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, NULL, &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], NULL, &tweak_sk[0], &combine_pk, msg, secnon1, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], NULL, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 4);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, NULL, &combine_pk, msg, secnon1, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, NULL, &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 5);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], NULL, msg, secnon1, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], NULL, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 6);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, NULL, secnon1, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, NULL, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 7);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, msg, NULL, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, NULL, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
     CHECK(ecount == 8);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, msg, secnon1, NULL, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, NULL, 3, 0, NULL) == 0);
     CHECK(ecount == 9);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk, msg, secnon1, signer_data, 3, 1, NULL) == 0); /* sign as missing signer */
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 1, NULL) == 0); /* sign as missing signer */
     CHECK(ecount == 9);
 
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, &tweak_sk[0], &combine_pk_taproot, msg, secnon1, signer_data, 3, 0, NULL) == 1);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[1], &aux, &tweak_sk[2], &combine_pk_taproot, msg, secnon3, signer_data, 3, 2, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk_taproot, msg, signer_data, 3, 0, NULL) == 1);
+    /* The nonce has been zeroed */
+    CHECK(memcmp(secnon1, zeros, 32) == 0);
+    /* And signig with a zero nonce fails */
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk_taproot, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[1], &aux, secnon3, &tweak_sk[2], &combine_pk_taproot, msg, signer_data, 3, 2, NULL) == 1);
 
     ecount = 0;
     CHECK(secp256k1_musig_partial_sig_verify(none, &partial_sig[0], &signer_data[0], &aux) == 0);
@@ -892,11 +900,11 @@ void musig_kofn(secp256k1_scratch_space *scratch, size_t k, size_t n) {
         secp256k1_musig_validation_aux tmp_aux;
         if (!data[i].present) {
             unsigned char tmp_secnon[32] = {1};
-            CHECK(!secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, &tweak_sk[i], &combine_pk, msg32, tmp_secnon, data, n, i, NULL));
+            CHECK(!secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, tmp_secnon, &tweak_sk[i], &combine_pk, msg32, data, n, i, NULL));
             continue;
         }
 
-        CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, &tweak_sk[i], &combine_pk, msg32, secnon[i], data, n, i, NULL));
+        CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, secnon[i], &tweak_sk[i], &combine_pk, msg32, data, n, i, NULL));
 
         CHECK(secp256k1_musig_partial_sig_verify(ctx, &partial_sig[present_count], &data[i], &tmp_aux) == 1);
         CHECK(secp256k1_musig_partial_sig_verify(ctx, &partial_sig[present_count], &data[!i], &tmp_aux) == 0);
@@ -989,17 +997,17 @@ void scriptless_atomic_swap(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_musig_set_nonce(ctx, &data_b[1], &pubnon_b[1]));
 
     /* Step 2: Signer 0 produces adaptor signatures */
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_a, &aux_a, &tweak_seckey_a[0], &combine_pk_a, msg32_a, secnon_a[0], data_a, 2, 0, sec_adaptor));
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_b, &aux_b, &tweak_seckey_b[0], &combine_pk_b, msg32_b, secnon_b[0], data_b, 2, 0, sec_adaptor));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_a, &aux_a, secnon_a[0], &tweak_seckey_a[0], &combine_pk_a, msg32_a, data_a, 2, 0, sec_adaptor));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_b, &aux_b, secnon_b[0], &tweak_seckey_b[0], &combine_pk_b, msg32_b, data_b, 2, 0, sec_adaptor));
 
     /* Step 3: Signer 1 receives adaptor signatures, checks that they used the same tweak, and signs to send B-coins */
     CHECK(secp256k1_musig_adaptor_signature_extract(ctx, &pub_adaptor_a, &adaptor_sig_a, &data_a[0], &aux_a));
     CHECK(secp256k1_musig_adaptor_signature_extract(ctx, &pub_adaptor_b, &adaptor_sig_b, &data_b[0], &aux_b));
     CHECK(memcmp(&pub_adaptor_a, &pub_adaptor_b, sizeof(pub_adaptor_a)) == 0); /* TODO the API says we're not allowed to compare pubkeys like this, but c'mon */
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[1], &aux_b, &tweak_seckey_b[1], &combine_pk_b, msg32_b, secnon_b[1], data_b, 2, 1, NULL));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[1], &aux_b, secnon_b[1], &tweak_seckey_b[1], &combine_pk_b, msg32_b, data_b, 2, 1, NULL));
 
     /* Step 4: Signer 0 signs to take B-coins, combines signatures and publishes */
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[0], &aux_b, &tweak_seckey_b[0], &combine_pk_b, msg32_b, secnon_b[0], data_b, 2, 0, NULL));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[0], &aux_b, secnon_b[0], &tweak_seckey_b[0], &combine_pk_b, msg32_b, data_b, 2, 0, NULL));
     CHECK(secp256k1_musig_partial_sig_combine(ctx, &final_sig_b, partial_sig_b, 2, data_b, 2, &aux_b, NULL) == 1);
     CHECK(secp256k1_musig_verify_1(ctx, &final_sig_b, msg32_b, &combine_pk_b) == 1);
 
@@ -1007,7 +1015,7 @@ void scriptless_atomic_swap(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_musig_adaptor_signature_extract_secret(ctx, sec_adaptor_extracted, &final_sig_b, &adaptor_sig_b, &partial_sig_b[1], NULL, NULL) == 1);
     CHECK(memcmp(sec_adaptor_extracted, sec_adaptor, sizeof(sec_adaptor)) == 0); /* in real life we couldn't check this, of course */
     CHECK(secp256k1_musig_adaptor_signature_adapt(ctx, &partial_sig_a[0], &adaptor_sig_a, sec_adaptor_extracted));
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_a[1], &aux_a, &tweak_seckey_a[1], &combine_pk_a, msg32_a, secnon_a[1], data_a, 2, 1, NULL));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_a[1], &aux_a, secnon_a[1], &tweak_seckey_a[1], &combine_pk_a, msg32_a, data_a, 2, 1, NULL));
     CHECK(secp256k1_musig_partial_sig_combine(ctx, &final_sig_a, partial_sig_a, 2, data_a, 2, &aux_a, NULL) == 1);
     CHECK(secp256k1_musig_verify_1(ctx, &final_sig_a, msg32_a, &combine_pk_a) == 1);
 }

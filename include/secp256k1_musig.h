@@ -353,10 +353,20 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_shard(
  *       scratch: scratch space used to compute the total nonce by multiexponentiation
  *  Out:     sig: partial signature (cannot be NULL)
  *           aux: auxillary data needed to verify other partial signatures (cannot be NULL)
+ *  In/Out:
+ *        secnon: secret half of signer's nonce (cannot be NULL). Will be set to 0 during signing if
+ *                no adaptor signature is produced, i.e. sec_adaptor is NULL. Fresh nonces must be
+ *                generated with secp256k1_musig_multisig_generate_nonce using a unique rngseed.
+ *                secnon is a nonce and therefore only to be used ONCE, no more. One shall be the
+ *                number of uses, and the number of uses shall be one. Once the nonce is used in
+ *                musig_partial_sign it shall be never reused. Failure to do this will result in the
+ *                secret key being leaked. If adaptor signatures are produced then the nonce is
+ *                effectively the tuple (secnon, sec_adaptor) and every tuple MUST only be used
+ *                once. In practice that means calling partial_sign with (secnon, sec_adaptor) and
+ *                then with (secnon, NULL).
  *  In:   seckey: secret signing key to use (cannot be NULL)
  *   combined_pk: combined public key of all signers (cannot be NULL)
  *         msg32: message to be signed (cannot be NULL)
- *        secnon: secret half of signer's nonce (cannot be NULL)
  *          data: array of public nonces and/or keyshards of all signers (cannot be NULL)
  *     n_signers: number of entries in the above array
  *      my_index: index of the caller in the array of signer data
@@ -369,15 +379,15 @@ SECP256K1_API int secp256k1_musig_partial_sign(
     secp256k1_scratch_space *scratch,
     secp256k1_musig_partial_signature *sig,
     secp256k1_musig_validation_aux *aux,
+    unsigned char *secnon,
     const secp256k1_musig_secret_key *seckey,
     const secp256k1_pubkey *combined_pk,
     const unsigned char *msg32,
-    const unsigned char *secnon,
     const secp256k1_musig_signer_data *data,
     size_t n_signers,
     size_t my_index,
     const unsigned char *sec_adaptor
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6) SECP256K1_ARG_NONNULL(7) SECP256K1_ARG_NONNULL(8);
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6) SECP256K1_ARG_NONNULL(7) SECP256K1_ARG_NONNULL(8) SECP256K1_ARG_NONNULL(9);
 
 /** Checks that an individual partial signature is valid
  *
