@@ -119,6 +119,20 @@ exhaustive_tests_LDFLAGS = -static
 TESTS += exhaustive_tests
 endif
 
+if ENABLE_MODULE_MUSIG
+noinst_PROGRAMS += example_musig
+example_musig_SOURCES = examples/musig.c
+example_musig_CPPFLAGS = -DSECP256K1_BUILD -I$(top_srcdir)/include $(SECP_INCLUDES)
+if !ENABLE_COVERAGE
+example_musig_CPPFLAGS += -DVERIFY
+endif
+example_musig_LDADD = libsecp256k1.la $(SECP_LIBS)
+example_musig_LDFLAGS = -static
+if USE_TESTS
+TESTS += example_musig
+endif
+endif
+
 JAVAROOT=src/java
 JAVAORG=org/bitcoin
 JAVA_GUAVA=$(srcdir)/$(JAVAROOT)/guava/guava-18.0.jar
