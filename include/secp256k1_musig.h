@@ -38,8 +38,8 @@ typedef struct {
     unsigned char data[33];
 } secp256k1_musig_partial_signature;
 
-/* Opaque data structure containing auxiallary data needed to validate partial
- * signatures. As above, the only guarantees is that this data will be 65 bytes
+/* Opaque data structure containing auxiliary data needed to validate partial
+ * signatures. As above, the only guarantees is that this data will be 64 bytes
  * in size and may be memcpy/memcmp'd. There are no functions to serialize or
  * parse this data structure because it should never be transmitted or stored.
  *
@@ -51,14 +51,10 @@ typedef struct {
 
 /** Data structure containing data on other signers to be used during signing
  *
- * This structure is single-use. It is initialized with a missing signer's key
- * shard, which should be stored securely and may be used for multiple signatures;
- * or a present signer's nonce commitment, which will be single-use.
- *
- * Before signing, for each present signer, the structure is completed with
- * that signer's actual public nonce.
- *
- * Use `secp256k1_musig_signer_data_initialize` to initialize
+ * This structure is initialized with `secp256k1_musig_signer_data_initialize`.
+ * If the signer is present, its nonce commitment is stored and before signing
+ * completed with that signer's actual public nonce. The structure is used only
+ * for a single signing attempt.
  *
  *   present: flag indicating whether the signer is present for this signature
  *    pubkey: public key that the signer will use for partial signing
@@ -131,10 +127,7 @@ SECP256K1_API int secp256k1_musig_partial_signature_serialize(
  *  Out:     sig: pointer to a signature object
  *  In:     in32: pointer to the 32-byte signature to be parsed
  *
- * The signature is simply a single scalar.
- * key (x-coordinate only; the y-coordinate is considered to be the unique
- * y-coordinate satisfying the curve equation that is a quadratic residue)
- * and s is a 32-byte big-endian scalar.
+ * The partial signature is a 32-byte big-endian scalar.
  *
  * After the call, sig will always be initialized. If parsing failed or the
  * encoded numbers are out of range, signature validation with it is
@@ -154,7 +147,7 @@ SECP256K1_API int secp256k1_musig_partial_signature_parse(
  *        commit: pointer to a 32-byte message to hash into the tweak
  *          data: Arbitrary data pointer that is passed through.
  *
- * Except for test cases, this function should hash the public key, message,
+ * Except for test cases, this function should hash the public key, commit,
  * and auxilliary data.
  */
 typedef int (*secp256k1_taproot_hash_function)(
@@ -169,7 +162,7 @@ typedef int (*secp256k1_taproot_hash_function)(
  *  directly for use with single_sign. */
 SECP256K1_API extern const secp256k1_taproot_hash_function secp256k1_taproot_hash_default;
 
-/** Creates a MuSig pubkey from a set of public keys and optionally a Taproot tweak
+/** Creates a MuSig pubkey from a set of public keys
  *
  * Users who want to use Taproot without MuSig, i.e. a single-signer pay-to-contract,
  * are better off manually computing the tweak and using `secp256k1_ec_privkey_tweak_add`
@@ -212,14 +205,16 @@ SECP256K1_API int secp256k1_musig_tweak_secret_key(
     size_t my_index
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
-/** Create a single-signer MuSig signature with a pre-Taproot-tweaked (or untweaked) secret key
+/** Create a single-signer MuSig signature.
+ * Before signing the secret key can be tweaked with a Taproot commitment using
+ * `secp256k1_ec_pubkey_tweak_add`.
  *
  * Returns 1 on success, 0 on failure.
  *
  *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
  *  Out:     sig: pointer to the returned signature (cannot be NULL)
  *  In:    msg32: the 32-byte message hash being signed (cannot be NULL)
- *        seckey: pointer to a 32-byte tweaked secret key (cannot be NULL)
+ *        seckey: pointer to a 32-byte secret key (cannot be NULL)
  *       noncefp: pointer to a nonce generation function. If NULL, secp256k1_nonce_function_default is used
  *         ndata: pointer to arbitrary data used by the nonce generation function (can be NULL)
  */
@@ -232,16 +227,16 @@ SECP256K1_API int secp256k1_musig_single_sign(
     const void *ndata
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
-/** Generate a uniformly nonce for a MuSig multisignature or threshold signature
+/** Generate a uniformly random nonce for a MuSig multisignature or threshold signature
  *
  *  Returns 1 always.
  *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
- *  Out:  secnon: pointer to the returned secret nonce (cannot be NULL)
+ *  Out:  secnon: pointer to the returned 32-byte secret nonce (cannot be NULL)
  *        pubnon: returned public nonce (cannot be NULL)
- *     noncommit: returned nonce commitment, if non-NULL
+ *     noncommit: returned 32-byte nonce commitment, if non-NULL
  *  In:   seckey: secret signing key (cannot be NULL)
- *         msg32: message to be signed (cannot be NULL)
- *       rngseed: unique seed. Does not need to be random but MUST BE UNIQUE (cannot be NULL)
+ *         msg32: 32-byte message to be signed (cannot be NULL)
+ *       rngseed: unique 32-byte seed. Does not need to be random but MUST BE UNIQUE (cannot be NULL)
  */
 SECP256K1_API int secp256k1_musig_multisig_generate_nonce(
     const secp256k1_context* ctx,
@@ -256,9 +251,10 @@ SECP256K1_API int secp256k1_musig_multisig_generate_nonce(
 /** Initializes a signer data structure, initially as "missing", at signing-time
  *
  * If the signer in question should be present, `noncommit` should be provided
- * and set to the signer's nonce commitment. Later `secp256k1_musig_set_nonce`
- * will mark the signer actually present, upon receipt of a nonce consistent
- * with the precommitment.
+ * and set to the signer's nonce commitment. After all nonce commitments have
+ * been received, the signers start to send out nonces.
+ * `secp256k1_musig_set_nonce` will mark the signer actually present, upon
+ * receipt of a nonce consistent with the precommitment.
  *
  * For n-of-n signatures, the parameter `pubkey` should be one of the `tweaked_pk`
  * pubkeys that was output from `secp256k1_musig_pubkey_combine` during the setup
@@ -281,7 +277,7 @@ SECP256K1_API int secp256k1_musig_signer_data_initialize(
 /** Checks a signer's public nonce against a precommitment to said nonce, and update data structure if they match
  *
  *  Returns: 1: commitment was valid, data structure updated
- *           0: commitment was valid, nothing happened
+ *           0: commitment was invalid, nothing happened
  *  Args:    ctx: pointer to a context object (cannot be NULL)
  *  In/Out: data: pointer to the signer data to update (cannot be NULL)
  *  In:   pubnon: signer's alleged public nonce (cannot be NULL)
@@ -351,33 +347,35 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_shard(
  *           0: invalid secret key, invalid keyshards, not enough signers and/or keyshards, calling signer not present
  *  Args:    ctx: pointer to a context object initialized for verification (cannot be NULL)
  *       scratch: scratch space used to compute the total nonce by multiexponentiation
- *  Out:     sig: partial signature (cannot be NULL)
+ *  Out:
+ *   partial_sig: partial signature (cannot be NULL)
  *           aux: auxillary data needed to verify other partial signatures (cannot be NULL)
  *  In/Out:
- *        secnon: secret half of signer's nonce (cannot be NULL). Will be set to 0 during signing if
- *                no adaptor signature is produced, i.e. sec_adaptor is NULL. Fresh nonces must be
- *                generated with secp256k1_musig_multisig_generate_nonce using a unique rngseed.
- *                secnon is a nonce and therefore only to be used ONCE, no more. One shall be the
- *                number of uses, and the number of uses shall be one. Once the nonce is used in
- *                musig_partial_sign it shall be never reused. Failure to do this will result in the
- *                secret key being leaked. If adaptor signatures are produced then the nonce is
- *                effectively the tuple (secnon, sec_adaptor) and every tuple MUST only be used
- *                once. In practice that means calling partial_sign with (secnon, sec_adaptor) and
- *                then with (secnon, NULL).
+ *        secnon: 32-byte secret half of signer's nonce (cannot be NULL). Will be set to 0 during
+ *                signing if no adaptor signature is produced, i.e. sec_adaptor is NULL. Fresh
+ *                nonces must be generated with secp256k1_musig_multisig_generate_nonce using a
+ *                unique rngseed. secnon is a nonce and therefore only to be used ONCE, no more.
+ *                One shall be the number of uses, and the number of uses shall be one. Once the
+ *                nonce is used in musig_partial_sign it shall be never reused. Failure to do this
+ *                will result in the secret key being leaked. If adaptor signatures are produced
+ *                then the nonce is effectively the tuple (secnon, sec_adaptor) and every tuple MUST
+ *                only be used once. In practice that means calling partial_sign with (secnon,
+ *                sec_adaptor) and then with (secnon, NULL).
  *  In:   seckey: secret signing key to use (cannot be NULL)
  *   combined_pk: combined public key of all signers (cannot be NULL)
- *         msg32: message to be signed (cannot be NULL)
- *          data: array of public nonces and/or keyshards of all signers (cannot be NULL)
+ *         msg32: 32-byte message to be signed (cannot be NULL)
+ *          data: array of public nonces and/or keyshards of all signers including this signer (cannot be NULL).
+ *                The order of signers must be the same as in combine_pubkey.
  *     n_signers: number of entries in the above array
  *      my_index: index of the caller in the array of signer data
- *   sec_adaptor: secret value to be subtracted from the signature, if an adaptor
+ *   sec_adaptor: 32-byte secret value to be subtracted from the signature, if an adaptor
  *                signature is to be produced. Should be set to NULL for a normal
  *                partial signature.
  */
 SECP256K1_API int secp256k1_musig_partial_sign(
     const secp256k1_context* ctx,
     secp256k1_scratch_space *scratch,
-    secp256k1_musig_partial_signature *sig,
+    secp256k1_musig_partial_signature *partial_sig,
     secp256k1_musig_validation_aux *aux,
     unsigned char *secnon,
     const secp256k1_musig_secret_key *seckey,
@@ -416,14 +414,14 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_verif
  *  Returns: 1: adaptor signature was correctly encoded and had nontrivial tweak
  *           0: invalid adaptor signature or valid (untweaked) partial signature
  *  Args:         ctx: pointer to a context object, initialized for verification (cannot be NULL)
- *  Out:     pubtweak: public tweak (cannot be NULL)
+ *  Out:     pub_tweak: public tweak (cannot be NULL)
  *  In:   partial_sig: adaptor signature to extract tweak from (cannot be NULL)
  *               data: signer data for this signer (not the whole array) (cannot be NULL)
  *                aux: auxillary partial-signature validation data (cannot be NULL)
  */
 SECP256K1_API int secp256k1_musig_adaptor_signature_extract(
     const secp256k1_context* ctx,
-    secp256k1_pubkey *pub_adaptor,
+    secp256k1_pubkey *pub_tweak,
     const secp256k1_musig_partial_signature *partial_sig,
     const secp256k1_musig_signer_data *data,
     const secp256k1_musig_validation_aux *aux
@@ -453,10 +451,11 @@ SECP256K1_API int secp256k1_musig_adaptor_signature_adapt(
  *  Out:          sig: complete signature (cannot be NULL)
  *  In:   partial_sig: array of partial signatures to combine (cannot be NULL)
  *             n_sigs: number of signatures in the above array
- *               data: signer data (cannot be NULL)
- *          n_signers: total number of signers (must be >= n_sigs)
+ *               data: signer data of all signers including missing ones (cannot be NULL).
+ *                     The order of signers must be the same as in combine_pubkey.
+ *          n_signers: number of entries in the above array
  *                aux: auxillary data from `partial_sign` (cannot be NULL)
- *      taproot_tweak: the Taproot tweak from `pubkey_combine`, or NULL if Taproot is unused
+ *      taproot_tweak: the 32-byte Taproot tweak or NULL if Taproot is unused
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_combine(
     const secp256k1_context* ctx,
@@ -480,7 +479,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_combi
  *                     sum of all partial signatures that are not the adaptor signature) (cannot be NULL)
  *        adaptor_sig: adaptor signature to extract secret from (cannot be NULL)
  *                aux: auxillary data from `partial_sign` (cannot be NULL if Taproot is used)
- *      taproot_tweak: the Taproot tweak from `pubkey_combine`, or NULL if Taproot is unused
+ *      taproot_tweak: the Taproot tweak, or NULL if Taproot is unused
  */
 SECP256K1_API int secp256k1_musig_adaptor_signature_extract_secret(
     const secp256k1_context* ctx,
@@ -499,7 +498,7 @@ SECP256K1_API int secp256k1_musig_adaptor_signature_extract_secret(
  *  Args:         ctx: pointer to a context object (cannot be NULL)
  *  Out:  partial_sig: partial signature (cannot be NULL)
  *  In:   adaptor_sig: adaptor signature (cannot be NULL)
- *        sec_adaptor: secret to tweak adaptor signature with (cannot be NULL)
+ *        sec_adaptor: 32-byte secret to tweak adaptor signature with (cannot be NULL)
  */
 SECP256K1_API int secp256k1_musig_adaptor_signature_apply_secret(
     const secp256k1_context* ctx,
@@ -536,7 +535,8 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_1(
  *        n_sigs: number of signatures in above arrays (must be 0 if they are NULL)
  *  taproot_untweaked: array of "bare" Taproot keys, or NULL if there are no Taproot commitments
  *    taproot_tweaked: array of Taproot keys, or NULL if there are no Taproot commitments
- *            tweak32: array of committed data, or NULL if there are no Taproot commitments
+ *            tweak32: array of committed 32-byte data, or NULL if there are no Taproot commitments
+ *           n_tweaks: array of elements in above array
  *        hashfp: function to use when computing Taproot commitments, or NULL to use the default
  *         hdata: extra data to pass to `hashfp`, ignored by the default function
  */
