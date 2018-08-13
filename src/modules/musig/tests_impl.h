@@ -23,11 +23,13 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     unsigned char noncom3[32];
     unsigned char sig64[64];
     secp256k1_pubkey pk[3];
+    secp256k1_pubkey tweaked_pks[3];
     secp256k1_pubkey pubnon1;
     secp256k1_pubkey pubnon3;
-    secp256k1_pubkey tweak_pk[3];
-    secp256k1_pubkey combine_pk;
-    secp256k1_pubkey combine_pk_taproot;
+    secp256k1_pubkey combined_pk_untweaked;
+    secp256k1_pubkey combined_pk;
+    secp256k1_musig_config musig_config;
+    secp256k1_musig_config musig_config_untweaked;
     secp256k1_musig_signature sig;
     secp256k1_musig_partial_signature partial_sig[2];
     secp256k1_musig_validation_aux aux;
@@ -36,10 +38,9 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
 
     unsigned char commit[32];
     const unsigned char *commitptr = commit;
-    unsigned char tp_tweak[32];
     const secp256k1_pubkey *pkptr = &pk[0];
-    const secp256k1_pubkey *tptr = &combine_pk_taproot;
-    const secp256k1_pubkey *utptr = &combine_pk;
+    const secp256k1_pubkey *tptr = &combined_pk;
+    const secp256k1_pubkey *utptr = &combined_pk_untweaked;
     secp256k1_musig_signer_data signer_data[3];
     unsigned char shards1_arr[3][32];
     unsigned char shards2_arr[3][32];
@@ -84,25 +85,42 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_ec_pubkey_create(ctx, &pk[2], sk3) == 1);
 
     /** main test body **/
-    /** key setup **/
+    /** MuSig configuration **/
     ecount = 0;
-    CHECK(secp256k1_musig_pubkey_combine(none, tweak_pk, &combine_pk, pk, 3) == 0);
+    CHECK(secp256k1_musig_init(none, scratch, &musig_config, pkptr, 2, 3, commit, NULL, NULL) == 0);
     CHECK(ecount == 1);
-    CHECK(secp256k1_musig_pubkey_combine(sign, tweak_pk, &combine_pk, pk, 3) == 0);
+    CHECK(secp256k1_musig_init(sign, scratch, &musig_config, pkptr, 2, 3, commit, NULL, NULL) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_pubkey_combine(vrfy, tweak_pk, &combine_pk, pk, 3) == 1);
-    CHECK(secp256k1_musig_pubkey_combine(vrfy, NULL, &combine_pk, pk, 3) == 1);
-    CHECK(ecount == 2);
-    CHECK(secp256k1_musig_pubkey_combine(vrfy, tweak_pk, NULL, pk, 3) == 0);
+    CHECK(secp256k1_musig_init(vrfy, NULL, &musig_config, pkptr, 2, 3, commit, NULL, NULL) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_pubkey_combine(vrfy, tweak_pk, &combine_pk, NULL, 3) == 0);
+    CHECK(secp256k1_musig_init(vrfy, scratch, NULL, pkptr, 2, 3, commit, NULL, NULL) == 0);
     CHECK(ecount == 4);
+    CHECK(secp256k1_musig_init(vrfy, scratch, &musig_config, NULL, 2, 3, commit, NULL, NULL) == 0);
+    CHECK(ecount == 5);
+    CHECK(secp256k1_musig_init(vrfy, scratch, &musig_config, pkptr, 0, 0, commit, NULL, NULL) == 0);
+    CHECK(secp256k1_musig_init(vrfy, scratch, &musig_config, pkptr, 0, 1, commit, NULL, NULL) == 0);
+    CHECK(secp256k1_musig_init(vrfy, scratch, &musig_config, pkptr, 2, 1, commit, NULL, NULL) == 0);
+    CHECK(ecount == 5);
 
-    CHECK(secp256k1_musig_pubkey_combine(vrfy, tweak_pk, &combine_pk, pk, 3) == 1);
-    CHECK(secp256k1_taproot_hash_default(tp_tweak, &combine_pk, commit, NULL));
-    memcpy(&combine_pk_taproot, &combine_pk, sizeof(combine_pk));
-    CHECK(secp256k1_ec_pubkey_tweak_add(vrfy, &combine_pk_taproot, tp_tweak));
+    CHECK(secp256k1_musig_init(vrfy, scratch, &musig_config, pkptr, 2, 3, commit, NULL, NULL) == 1);
+    CHECK(secp256k1_musig_init(vrfy, scratch, &musig_config_untweaked, pkptr, 2, 3, NULL, NULL, NULL) == 1);
 
+    ecount = 0;
+    CHECK(secp256k1_musig_pubkey(none, NULL, &musig_config_untweaked) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_musig_pubkey(none, &combined_pk, NULL) == 0);
+    CHECK(ecount == 2);
+    CHECK(secp256k1_musig_pubkey(none, &combined_pk_untweaked, &musig_config_untweaked) == 1);
+    CHECK(secp256k1_musig_pubkey(none, &combined_pk, &musig_config) == 1);
+
+    ecount = 0;
+    CHECK(secp256k1_musig_tweaked_pubkeys(none, NULL, &musig_config) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_musig_tweaked_pubkeys(none, tweaked_pks, NULL) == 0);
+    CHECK(ecount == 2);
+    CHECK(secp256k1_musig_tweaked_pubkeys(none, tweaked_pks, &musig_config) == 1);
+
+    /** key setup **/
     ecount = 0;
     CHECK(secp256k1_musig_tweak_secret_key(none, &tweak_sk[0], sk1, pk, 3, 0) == 1);
     CHECK(secp256k1_musig_tweak_secret_key(none, NULL, sk1, pk, 3, 0) == 0);
@@ -183,57 +201,56 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     CHECK(ecount == 8);
 
     ecount = 0;
-    CHECK(secp256k1_musig_keysplit(none, shards2, pubcoeff2, &tweak_sk[1], 1, 3, commit) == 0);
+    CHECK(secp256k1_musig_keysplit(none, shards2, pubcoeff2, &musig_config, &tweak_sk[1], commit) == 0);
     CHECK(ecount == 1);
-    CHECK(secp256k1_musig_keysplit(vrfy, shards2, pubcoeff2, &tweak_sk[1], 1, 3, commit) == 0);
+    CHECK(secp256k1_musig_keysplit(vrfy, shards2, pubcoeff2, &musig_config, &tweak_sk[1], commit) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &tweak_sk[1], 1, 3, commit) == 1);
+    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &musig_config, &tweak_sk[1], commit) == 1);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_keysplit(sign, NULL, pubcoeff2, &tweak_sk[1], 1, 3, commit) == 0);
+    CHECK(secp256k1_musig_keysplit(sign, NULL, pubcoeff2, &musig_config, &tweak_sk[1], commit) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, NULL, &tweak_sk[1], 1, 3, commit) == 0);
+    CHECK(secp256k1_musig_keysplit(sign, shards2, NULL, &musig_config, &tweak_sk[1], commit) == 0);
     CHECK(ecount == 4);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, NULL, 1, 3, commit) == 0);
+    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, NULL, &tweak_sk[1], commit) == 0);
     CHECK(ecount == 5);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &tweak_sk[1], 0, 3, commit) == 0);
-    CHECK(ecount == 5);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &tweak_sk[1], 3, 3, commit) == 0);
-    CHECK(ecount == 5);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &tweak_sk[1], 0, 0, commit) == 0);
-    CHECK(ecount == 5);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &tweak_sk[1], 2, 3, NULL) == 0);
+    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &musig_config, NULL, commit) == 0);
     CHECK(ecount == 6);
+    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &musig_config, &tweak_sk[1], NULL) == 0);
+    CHECK(ecount == 7);
 
-    CHECK(secp256k1_musig_keysplit(sign, shards1, pubcoeff1, &tweak_sk[0], 2, 3, commit) == 1);
-    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &tweak_sk[1], 2, 3, commit) == 1);
-    CHECK(secp256k1_musig_keysplit(sign, shards3, pubcoeff3, &tweak_sk[2], 2, 3, commit) == 1);
+    CHECK(secp256k1_musig_keysplit(sign, shards1, pubcoeff1, &musig_config, &tweak_sk[0], commit) == 1);
+    CHECK(secp256k1_musig_keysplit(sign, shards2, pubcoeff2, &musig_config, &tweak_sk[1], commit) == 1);
+    CHECK(secp256k1_musig_keysplit(sign, shards3, pubcoeff3, &musig_config, &tweak_sk[2], commit) == 1);
 
     ecount = 0;
-    CHECK(secp256k1_musig_verify_shard(none, scratch, &tweak_sk[0], kn_pubkeys, 3, 0, shards1[0], 0, pubcoeff1, 2) == 0);
+    CHECK(secp256k1_musig_verify_shard(none, scratch, &tweak_sk[0], kn_pubkeys, &musig_config, 0, shards1[0], 0, pubcoeff1) == 0);
     CHECK(ecount == 1);
-    CHECK(secp256k1_musig_verify_shard(sign, scratch, &tweak_sk[0], kn_pubkeys, 3, 0, shards1[0], 0, pubcoeff1, 2) == 0);
+    CHECK(secp256k1_musig_verify_shard(sign, scratch, &tweak_sk[0], kn_pubkeys, &musig_config, 0, shards1[0], 0, pubcoeff1) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_verify_shard(vrfy, scratch, &tweak_sk[0], kn_pubkeys, 3, 0, shards1[0], 0, pubcoeff1, 2) == 0);
+    CHECK(secp256k1_musig_verify_shard(vrfy, scratch, &tweak_sk[0], kn_pubkeys, &musig_config, 0, shards1[0], 0, pubcoeff1) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, 3, 0, shards1[0], 0, pubcoeff1, 2) == 1);
+    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, &musig_config, 0, shards1[0], 0, pubcoeff1) == 1);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_verify_shard(both, NULL, &tweak_sk[0], kn_pubkeys, 3, 0, shards1[0], 0, pubcoeff1, 2) == 0);
+    CHECK(secp256k1_musig_verify_shard(both, NULL, &tweak_sk[0], kn_pubkeys, &musig_config, 0, shards1[0], 0, pubcoeff1) == 0);
     CHECK(ecount == 4);
-    CHECK(secp256k1_musig_verify_shard(both, scratch, NULL, kn_pubkeys, 3, 0, shards1[0], 0, pubcoeff1, 2) == 1);
+    CHECK(secp256k1_musig_verify_shard(both, scratch, NULL, kn_pubkeys, &musig_config, 0, shards1[0], 0, pubcoeff1) == 1);
     CHECK(ecount == 4);
-    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], NULL, 3, 0, shards1[0], 0, pubcoeff1, 2) == 0);
+    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], NULL, &musig_config, 0, shards1[0], 0, pubcoeff1) == 0);
     CHECK(ecount == 5);
-    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, 3, 0, NULL, 0, pubcoeff1, 2) == 1);
-    CHECK(ecount == 5);
-    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, 3, 0, shards1[0], 0, NULL, 2) == 0);
+    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, NULL, 0, shards1[0], 0, pubcoeff1) == 0);
     CHECK(ecount == 6);
+    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, &musig_config, 0, NULL, 0, pubcoeff1) == 1);
+    CHECK(ecount == 6);
+    CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[0], kn_pubkeys, &musig_config, 0, shards1[0], 0, NULL) == 0);
+    CHECK(ecount == 7);
+
 
     for (i = 0; i < 3; i++) {
         secp256k1_pubkey tmp[3];
 
-        CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[i], tmp, 3, 0, shards1[i], i, pubcoeff1, 2) == 1);
-        CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[i], tmp, 3, 1, shards2[i], i, pubcoeff2, 2) == 1);
-        CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[i], tmp, 3, 1, shards3[i], i, pubcoeff3, 2) == 1);
+        CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[i], tmp, &musig_config, 0, shards1[i], i, pubcoeff1) == 1);
+        CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[i], tmp, &musig_config, 1, shards2[i], i, pubcoeff2) == 1);
+        CHECK(secp256k1_musig_verify_shard(both, scratch, &tweak_sk[i], tmp, &musig_config, 1, shards3[i], i, pubcoeff3) == 1);
         if (i == 0) {
             memcpy(kn_pubkeys, tmp, sizeof(kn_pubkeys));
         } else {
@@ -296,36 +313,36 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     CHECK(ecount == 2);
 
     ecount = 0;
-    CHECK(secp256k1_musig_partial_sign(none, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(none, scratch, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 1);
     /* Use temporary secnon, because it will be zeroed during a successful partial sign */
     memcpy(secnon_tmp, secnon1, 32);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon_tmp, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 1);
-    CHECK(secp256k1_musig_partial_sign(vrfy, NULL, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[0], &aux, secnon_tmp, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(vrfy, NULL, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, NULL, &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, NULL, &aux, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], NULL, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], NULL, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 4);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, NULL, &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, NULL, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 5);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], NULL, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &musig_config, NULL, msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 6);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, NULL, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], NULL, signer_data, 0, NULL) == 0);
     CHECK(ecount == 7);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, NULL, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, NULL, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
     CHECK(ecount == 8);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, NULL, 3, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], msg, NULL, 0, NULL) == 0);
     CHECK(ecount == 9);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk, msg, signer_data, 3, 1, NULL) == 0); /* sign as missing signer */
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 1, NULL) == 0); /* sign as missing signer */
     CHECK(ecount == 9);
 
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk_taproot, msg, signer_data, 3, 0, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 1);
     /* The nonce has been zeroed */
     CHECK(memcmp(secnon1, zeros, 32) == 0);
     /* And signig with a zero nonce fails */
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &tweak_sk[0], &combine_pk_taproot, msg, signer_data, 3, 0, NULL) == 0);
-    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[1], &aux, secnon3, &tweak_sk[2], &combine_pk_taproot, msg, signer_data, 3, 2, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(vrfy, scratch, &partial_sig[0], &aux, secnon1, &musig_config, &tweak_sk[0], msg, signer_data, 0, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[1], &aux, secnon3, &musig_config, &tweak_sk[2], msg, signer_data, 2, NULL) == 1);
 
     ecount = 0;
     CHECK(secp256k1_musig_partial_sig_verify(none, &partial_sig[0], &signer_data[0], &aux) == 0);
@@ -339,22 +356,28 @@ void musig_api_tests(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_musig_partial_sig_verify(vrfy, &partial_sig[1], &signer_data[2], &aux) == 1);
 
     ecount = 0;
-    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, partial_sig, 2, signer_data, 3, &aux, NULL) == 1);
-    CHECK(secp256k1_musig_partial_sig_combine(none, NULL, partial_sig, 2, signer_data, 3, &aux, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, &musig_config, partial_sig, 2, signer_data, &aux) == 1);
+    CHECK(secp256k1_musig_partial_sig_combine(none, NULL, &musig_config, partial_sig, 2, signer_data, &aux) == 0);
     CHECK(ecount == 1);
-    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, NULL, 2, signer_data, 3, &aux, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, &musig_config, NULL, 2, signer_data, &aux) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, partial_sig, 4, signer_data, 3, &aux, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, &musig_config, partial_sig, 4, signer_data, &aux) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, partial_sig, 2, NULL, 3, &aux, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, &musig_config, partial_sig, 2, NULL, &aux) == 0);
     CHECK(ecount == 4);
-    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, partial_sig, 2, signer_data, 3, NULL, NULL) == 0);
+    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, &musig_config, partial_sig, 2, signer_data, NULL) == 0);
     CHECK(ecount == 5);
 
-    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, partial_sig, 2, signer_data, 3, &aux, tp_tweak) == 1);
-    CHECK(secp256k1_musig_verify_1(vrfy, &sig, msg, &combine_pk_taproot) == 1);
+    CHECK(secp256k1_musig_partial_sig_combine(none, &sig, &musig_config, partial_sig, 2, signer_data, &aux) == 1);
+    CHECK(secp256k1_musig_verify_1(vrfy, &sig, msg, &combined_pk) == 1);
+
+    ecount = 0;
+    CHECK(secp256k1_musig_config_destroy(none, NULL) == 0);
+    CHECK(ecount == 1);
 
     /** cleanup **/
+    CHECK(secp256k1_musig_config_destroy(none, &musig_config));
+    CHECK(secp256k1_musig_config_destroy(none, &musig_config_untweaked));
     secp256k1_context_destroy(none);
     secp256k1_context_destroy(sign);
     secp256k1_context_destroy(vrfy);
@@ -774,7 +797,8 @@ void musig_kofn(secp256k1_scratch_space *scratch, size_t k, size_t n) {
     secp256k1_pubkey *pk;
     secp256k1_pubkey *tweak_pk;
     secp256k1_pubkey *tweak_pk2;
-    secp256k1_pubkey combine_pk;
+    secp256k1_pubkey combined_pk;
+    secp256k1_musig_config musig_config;
 
     unsigned char **sk;
     secp256k1_musig_secret_key *tweak_sk;
@@ -833,7 +857,8 @@ void musig_kofn(secp256k1_scratch_space *scratch, size_t k, size_t n) {
         secp256k1_rand256(sk[i]);
         CHECK(secp256k1_ec_pubkey_create(ctx, &pk[i], sk[i]) == 1);
     }
-    CHECK(secp256k1_musig_pubkey_combine(ctx, tweak_pk, &combine_pk, pk, n));
+    CHECK(secp256k1_musig_init(ctx, scratch, &musig_config, pk, k, n, NULL, NULL, NULL));
+    CHECK(secp256k1_musig_tweaked_pubkeys(ctx, tweak_pk, &musig_config));
 
     for (i = 0; i < n; i++) {
         unsigned char seed[32];
@@ -849,15 +874,15 @@ void musig_kofn(secp256k1_scratch_space *scratch, size_t k, size_t n) {
         for (i = 0; i < n; i++) {
             unsigned char seed[32];
             secp256k1_rand256(seed);
-            CHECK(secp256k1_musig_keysplit(ctx, privshard[i], pubcoeff[i], &tweak_sk[i], k, n, seed));
+            CHECK(secp256k1_musig_keysplit(ctx, privshard[i], pubcoeff[i], &musig_config, &tweak_sk[i], seed));
         }
 
         for (i = 0; i < n; i++) {
             size_t j;
 
-            CHECK(secp256k1_musig_verify_shard(ctx, scratch, &tweak_sk[i], tweak_pk2, n, 0, privshard[0][i], i, pubcoeff[0], k) == 1);
+            CHECK(secp256k1_musig_verify_shard(ctx, scratch, &tweak_sk[i], tweak_pk2, &musig_config, 0, privshard[0][i], i, pubcoeff[0]) == 1);
             for (j = 1; j < n; j++) {
-                CHECK(secp256k1_musig_verify_shard(ctx, scratch, &tweak_sk[i], tweak_pk2, n, 1, privshard[j][i], i, pubcoeff[j], k) == 1);
+                CHECK(secp256k1_musig_verify_shard(ctx, scratch, &tweak_sk[i], tweak_pk2, &musig_config, 1, privshard[j][i], i, pubcoeff[j]) == 1);
             }
             if (i == 0) {
                 memcpy(tweak_pk, tweak_pk2, n * sizeof(*tweak_pk));
@@ -900,11 +925,11 @@ void musig_kofn(secp256k1_scratch_space *scratch, size_t k, size_t n) {
         secp256k1_musig_validation_aux tmp_aux;
         if (!data[i].present) {
             unsigned char tmp_secnon[32] = {1};
-            CHECK(!secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, tmp_secnon, &tweak_sk[i], &combine_pk, msg32, data, n, i, NULL));
+            CHECK(!secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, tmp_secnon, &musig_config, &tweak_sk[i], msg32, data, i, NULL));
             continue;
         }
 
-        CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, secnon[i], &tweak_sk[i], &combine_pk, msg32, data, n, i, NULL));
+        CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig[present_count], &tmp_aux, secnon[i], &musig_config, &tweak_sk[i], msg32, data, i, NULL));
 
         CHECK(secp256k1_musig_partial_sig_verify(ctx, &partial_sig[present_count], &data[i], &tmp_aux) == 1);
         CHECK(secp256k1_musig_partial_sig_verify(ctx, &partial_sig[present_count], &data[!i], &tmp_aux) == 0);
@@ -916,10 +941,12 @@ void musig_kofn(secp256k1_scratch_space *scratch, size_t k, size_t n) {
         present_count++;
     }
 
-    CHECK(secp256k1_musig_partial_sig_combine(ctx, &sig, partial_sig, k, data, n, &aux, NULL));
-    CHECK(secp256k1_musig_verify_1(ctx, &sig, msg32, &combine_pk));
+    CHECK(secp256k1_musig_partial_sig_combine(ctx, &sig, &musig_config, partial_sig, k, data, &aux));
+    CHECK(secp256k1_musig_pubkey(ctx, &combined_pk, &musig_config));
+    CHECK(secp256k1_musig_verify_1(ctx, &sig, msg32, &combined_pk));
 
     secp256k1_scratch_deallocate_frame(scratch);
+    CHECK(secp256k1_musig_config_destroy(ctx, &musig_config));
 }
 
 void scriptless_atomic_swap(secp256k1_scratch_space *scratch) {
@@ -948,6 +975,10 @@ void scriptless_atomic_swap(secp256k1_scratch_space *scratch) {
     secp256k1_pubkey pk_b[2];
     secp256k1_pubkey combine_pk_a;
     secp256k1_pubkey combine_pk_b;
+    secp256k1_musig_config musig_config_a;
+    secp256k1_musig_config musig_config_b;
+    secp256k1_pubkey musig_pk_a[2];
+    secp256k1_pubkey musig_pk_b[2];
     unsigned char secnon_a[2][32];
     unsigned char secnon_b[2][32];
     unsigned char noncommit_a[2][32];
@@ -978,8 +1009,8 @@ void scriptless_atomic_swap(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_musig_tweak_secret_key(ctx, &tweak_seckey_b[0], seckey_b[0], pk_b, 2, 0) == 1);
     CHECK(secp256k1_musig_tweak_secret_key(ctx, &tweak_seckey_b[1], seckey_b[1], pk_b, 2, 1) == 1);
 
-    CHECK(secp256k1_musig_pubkey_combine(ctx, pk_a, &combine_pk_a, pk_a, 2));
-    CHECK(secp256k1_musig_pubkey_combine(ctx, pk_b, &combine_pk_b, pk_b, 2));
+    CHECK(secp256k1_musig_init(ctx, scratch, &musig_config_a, pk_a, 2, 2, NULL, NULL, NULL));
+    CHECK(secp256k1_musig_init(ctx, scratch, &musig_config_b, pk_b, 2, 2, NULL, NULL, NULL));
 
     /* Step 2: Exchange nonces */
     CHECK(secp256k1_musig_multisig_generate_nonce(ctx, secnon_a[0], &pubnon_a[0], noncommit_a[0], &tweak_seckey_a[0], msg32_a, seed));
@@ -987,37 +1018,44 @@ void scriptless_atomic_swap(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_musig_multisig_generate_nonce(ctx, secnon_b[0], &pubnon_b[0], noncommit_b[0], &tweak_seckey_b[0], msg32_b, seed));
     CHECK(secp256k1_musig_multisig_generate_nonce(ctx, secnon_b[1], &pubnon_b[1], noncommit_b[1], &tweak_seckey_b[1], msg32_b, seed));
 
-    secp256k1_musig_signer_data_initialize(ctx, &data_a[0], &pk_a[0], noncommit_a[0]);
-    secp256k1_musig_signer_data_initialize(ctx, &data_a[1], &pk_a[1], noncommit_a[1]);
-    secp256k1_musig_signer_data_initialize(ctx, &data_b[0], &pk_b[0], noncommit_b[0]);
-    secp256k1_musig_signer_data_initialize(ctx, &data_b[1], &pk_b[1], noncommit_b[1]);
+    CHECK(secp256k1_musig_tweaked_pubkeys(ctx, musig_pk_a, &musig_config_a));
+    secp256k1_musig_signer_data_initialize(ctx, &data_a[0], &musig_pk_a[0], noncommit_a[0]);
+    secp256k1_musig_signer_data_initialize(ctx, &data_a[1], &musig_pk_a[1], noncommit_a[1]);
+    CHECK(secp256k1_musig_tweaked_pubkeys(ctx, musig_pk_b, &musig_config_b));
+    secp256k1_musig_signer_data_initialize(ctx, &data_b[0], &musig_pk_b[0], noncommit_b[0]);
+    secp256k1_musig_signer_data_initialize(ctx, &data_b[1], &musig_pk_b[1], noncommit_b[1]);
     CHECK(secp256k1_musig_set_nonce(ctx, &data_a[0], &pubnon_a[0]));
     CHECK(secp256k1_musig_set_nonce(ctx, &data_a[1], &pubnon_a[1]));
     CHECK(secp256k1_musig_set_nonce(ctx, &data_b[0], &pubnon_b[0]));
     CHECK(secp256k1_musig_set_nonce(ctx, &data_b[1], &pubnon_b[1]));
 
     /* Step 2: Signer 0 produces adaptor signatures */
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_a, &aux_a, secnon_a[0], &tweak_seckey_a[0], &combine_pk_a, msg32_a, data_a, 2, 0, sec_adaptor));
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_b, &aux_b, secnon_b[0], &tweak_seckey_b[0], &combine_pk_b, msg32_b, data_b, 2, 0, sec_adaptor));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_a, &aux_a, secnon_a[0], &musig_config_a, &tweak_seckey_a[0], msg32_a, data_a, 0, sec_adaptor));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &adaptor_sig_b, &aux_b, secnon_b[0], &musig_config_b, &tweak_seckey_b[0], msg32_b, data_b, 0, sec_adaptor));
 
     /* Step 3: Signer 1 receives adaptor signatures, checks that they used the same tweak, and signs to send B-coins */
     CHECK(secp256k1_musig_adaptor_signature_extract(ctx, &pub_adaptor_a, &adaptor_sig_a, &data_a[0], &aux_a));
     CHECK(secp256k1_musig_adaptor_signature_extract(ctx, &pub_adaptor_b, &adaptor_sig_b, &data_b[0], &aux_b));
     CHECK(memcmp(&pub_adaptor_a, &pub_adaptor_b, sizeof(pub_adaptor_a)) == 0); /* TODO the API says we're not allowed to compare pubkeys like this, but c'mon */
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[1], &aux_b, secnon_b[1], &tweak_seckey_b[1], &combine_pk_b, msg32_b, data_b, 2, 1, NULL));
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[1], &aux_b, secnon_b[1], &musig_config_b, &tweak_seckey_b[1], msg32_b, data_b, 1, NULL));
 
     /* Step 4: Signer 0 signs to take B-coins, combines signatures and publishes */
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[0], &aux_b, secnon_b[0], &tweak_seckey_b[0], &combine_pk_b, msg32_b, data_b, 2, 0, NULL));
-    CHECK(secp256k1_musig_partial_sig_combine(ctx, &final_sig_b, partial_sig_b, 2, data_b, 2, &aux_b, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_b[0], &aux_b, secnon_b[0], &musig_config_b, &tweak_seckey_b[0], msg32_b, data_b, 0, NULL));
+    CHECK(secp256k1_musig_partial_sig_combine(ctx, &final_sig_b, &musig_config_b, partial_sig_b, 2, data_b, &aux_b) == 1);
+    CHECK(secp256k1_musig_pubkey(ctx, &combine_pk_b, &musig_config_b));
     CHECK(secp256k1_musig_verify_1(ctx, &final_sig_b, msg32_b, &combine_pk_b) == 1);
 
     /* Step 5: Signer 1 extracts secret from published signature, applies it to other adaptor signature, and takes A-coins */
-    CHECK(secp256k1_musig_adaptor_signature_extract_secret(ctx, sec_adaptor_extracted, &final_sig_b, &adaptor_sig_b, &partial_sig_b[1], NULL, NULL) == 1);
+    CHECK(secp256k1_musig_adaptor_signature_extract_secret(ctx, sec_adaptor_extracted, &musig_config_b, &final_sig_b, &adaptor_sig_b, &partial_sig_b[1], NULL) == 1);
     CHECK(memcmp(sec_adaptor_extracted, sec_adaptor, sizeof(sec_adaptor)) == 0); /* in real life we couldn't check this, of course */
     CHECK(secp256k1_musig_adaptor_signature_adapt(ctx, &partial_sig_a[0], &adaptor_sig_a, sec_adaptor_extracted));
-    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_a[1], &aux_a, secnon_a[1], &tweak_seckey_a[1], &combine_pk_a, msg32_a, data_a, 2, 1, NULL));
-    CHECK(secp256k1_musig_partial_sig_combine(ctx, &final_sig_a, partial_sig_a, 2, data_a, 2, &aux_a, NULL) == 1);
+    CHECK(secp256k1_musig_partial_sign(ctx, scratch, &partial_sig_a[1], &aux_a, secnon_a[1], &musig_config_a, &tweak_seckey_a[1], msg32_a, data_a, 1, NULL));
+    CHECK(secp256k1_musig_partial_sig_combine(ctx, &final_sig_a, &musig_config_a, partial_sig_a, 2, data_a, &aux_a) == 1);
+    CHECK(secp256k1_musig_pubkey(ctx, &combine_pk_a, &musig_config_a));
     CHECK(secp256k1_musig_verify_1(ctx, &final_sig_a, msg32_a, &combine_pk_a) == 1);
+
+    CHECK(secp256k1_musig_config_destroy(ctx, &musig_config_a));
+    CHECK(secp256k1_musig_config_destroy(ctx, &musig_config_b));
 }
 
 void run_musig_tests(void) {

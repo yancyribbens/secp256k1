@@ -14,6 +14,33 @@ typedef struct {
     unsigned char data[64];
 } secp256k1_musig_signature;
 
+/** Opaque data structure containing MuSig parameters, such as number of keys, threshold, combined
+ *  public keys and Taproot commitment.
+ *
+ *  The exact representation of data inside is implementation defined and not
+ *  guaranteed to be portable between different platforms or versions.
+ *
+ *  This structure is initialized with `secp256k1_musig_init` and must be destroyed with
+ *  `secp256k1_musig_destroy`.
+ *
+ *         scratch: scratch space used to store `n` MuSig pubkeys (cannot be NULL)
+ *               k: number of partial signatures required to make a combined signature (= threshold)
+ *               n: number of public keys involved in the multisignature
+ * taproot_tweaked: flag indicating whether `combined_pk` includes a taproot commitment
+ *   taproot_tweak: the 32-byte Taproot tweak if taproot_tweaked
+ *       musig_pks: `n` MuSig tweaked public keys from the signers
+ *     combined_pk: combination of the signers public keys and the taproot commitment (if present)
+ */
+typedef struct {
+    secp256k1_scratch_space *scratch;
+    size_t k;
+    size_t n;
+    int taproot_tweaked;
+    unsigned char taproot_tweak[32];
+    secp256k1_pubkey *musig_pks;
+    secp256k1_pubkey combined_pk;
+} secp256k1_musig_config;
+
 /** Secret key tweaked for MuSig. Create with `secp256k1_musig_tweak_secret_key`.
  *
  * This data structure is not opaque. It is guaranteed to be a 32-byte secret key
@@ -162,7 +189,9 @@ typedef int (*secp256k1_taproot_hash_function)(
  *  directly for use with single_sign. */
 SECP256K1_API extern const secp256k1_taproot_hash_function secp256k1_taproot_hash_default;
 
-/** Creates a MuSig pubkey from a set of public keys
+/** Creates a MuSig configuration from an array of public keys and a Taproot commitment.
+ *
+ * The musig_config object must be destroyed with `secp256k1_musig_config_destroy`.
  *
  * Users who want to use Taproot without MuSig, i.e. a single-signer pay-to-contract,
  * are better off manually computing the tweak and using `secp256k1_ec_privkey_tweak_add`
@@ -171,19 +200,67 @@ SECP256K1_API extern const secp256k1_taproot_hash_function secp256k1_taproot_has
  *
  * Returns 1 on success, 0 on failure.
  *
- *  Args:    ctx: pointer to a context object, initialized for verification (cannot be NULL)
- *  Out:  tweaked_pk: if non-NULL, filled with individual signers' tweaked public keys
- *       combined_pk: tweaked MuSig pubkey, including Taproot commitment if present (cannot be NULL)
- *  In:       pk: input public keys (cannot be NULL)
- *            np: number of keys in the above array
+ *  Args:     ctx: pointer to a context object, initialized for verification (cannot be NULL)
+ *        scratch: scratch space used to store `n` MuSig pubkeys (cannot be NULL)
+ *  Out: musig_config: filled with the initialized MuSig config data
+ *  In:           pks: input public keys (cannot be NULL)
+ *                  k: number of partial signatures required to make a combined signature
+ *                     (= threshold)
+ *                  n: number of public keys involved in the multisignature and number of elements
+ *                     in `pks`
+ *         commitment: 32-byte Taproot commitment to be included in the combined public key or NULL
+ *                     if Taproot is unused
+ *             hashfp: function to use when computing Taproot commitments, or NULL to use the
+ *                     default
+ *              hdata: extra data to pass to `hashfp`, ignored by the default function
  */
-SECP256K1_API int secp256k1_musig_pubkey_combine(
+SECP256K1_API int secp256k1_musig_init(
     const secp256k1_context* ctx,
-    secp256k1_pubkey *tweaked_pk,
+    secp256k1_scratch_space *scratch,
+    secp256k1_musig_config *musig_config,
+    const secp256k1_pubkey *pks,
+    const size_t k,
+    const size_t n,
+    const unsigned char *commitment,
+    secp256k1_taproot_hash_function hashfp,
+    void *hdata
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+
+/** Destroy a secp256k1 MuSig configuration.
+ *
+ *  The pointer may not be used afterwards.
+ *  Args:        ctx: pointer to a context object (cannot be NULL)
+ *      musig_config: MuSig configuration to destroy (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_config_destroy(
+    const secp256k1_context* ctx,
+    secp256k1_musig_config *musig_config
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2);
+
+/** Get the MuSig pubkey from the MuSig configuration
+ *
+ *  Args:        ctx: pointer to a context object (cannot be NULL)
+ *  Out: combined_pk: combined public key encoding the MuSig signing policy and the taproot
+ *                    commitment if present (cannot be NULL)
+ *  In: musig_config: MuSig configuration for `combined_pk` (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_pubkey(
+    const secp256k1_context* ctx,
     secp256k1_pubkey *combined_pk,
-    const secp256k1_pubkey *pk,
-    size_t np
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(3);
+    const secp256k1_musig_config *musig_config
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
+
+/** Get the individual MuSig-tweaked pubkey from the MuSig configuration
+ *
+ *  Args:        ctx: pointer to a context object (cannot be NULL)
+ *  Out:   musig_pks: `n` MuSig-tweaked public keys (cannot be NULL)
+ *  In: musig_config: MuSig configuration for `musig_pks` (cannot be NULL)
+ */
+SECP256K1_API int secp256k1_musig_tweaked_pubkeys(
+    const secp256k1_context* ctx,
+    secp256k1_pubkey *musig_pks,
+    const secp256k1_musig_config *musig_config
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
 /** Computes a MuSig multiplier and multiplies a secret key by it.
  *
@@ -295,22 +372,20 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_set_nonce(
  *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
  *  Out:  shards: array of returned shards, which are each 32-byte unsigned char arrays (cannot be NULL)
  *      pubcoeff: array of public shards, which are used to verify shards (cannot be NULL)
- *  In:   seckey: secret signing key to be split (cannot be NULL)
- *             k: number of shards to be required when signing; also the length of the `pubcoeff` array
- *             n: number of signers; also the length of the `shards` array
- *       rngseed: unique seed. Does not need to be random but MUST BE UNIQUE.
- *                May be reused in `secp256k1_musig_multisig_generate_nonce`, though that is a signing-time
- *                function and this is a key-setup-time function. (cannot be NULL)
+ *  In: musig_config: MuSig configuration (cannot be NULL)
+ *            seckey: secret signing key to be split (cannot be NULL)
+ *           rngseed: unique seed. Does not need to be random but MUST BE UNIQUE.
+ *                    May be reused in `secp256k1_musig_multisig_generate_nonce`, though that is a
+ *                    signing-time function and this is a key-setup-time function. (cannot be NULL)
  */
 SECP256K1_API int secp256k1_musig_keysplit(
     const secp256k1_context* ctx,
     unsigned char *const *shards,
     secp256k1_pubkey *pubcoeff,
+    const secp256k1_musig_config *musig_config,
     const secp256k1_musig_secret_key *seckey,
-    const size_t k,
-    const size_t n,
     const unsigned char *rngseed
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(7);
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6);
 
 /** Verifies that a shard is valid and updates a set of partial signing keys accordingly
  *
@@ -321,25 +396,24 @@ SECP256K1_API int secp256k1_musig_keysplit(
  *  Out:  seckey: set to running sum of secret shards, if non-NULL
  *        pubkey: array of partial signing keys to initialize or update (cannot be NULL)
  *                if the function fails, this array should assume to be trashed.
- *  In:   n_keys: total number of signers
- *    continuing: 0 on first call (set seckey/pubkey), 1 on subsequent calls (update seckey/pubkey)
- *     privshard: secret shard provided by the signer to the verifier; will be checked if non-NULL
- *        my_idx: index of verifier's privaty shard
- *      pubcoeff: list of public coefficients, the first of which will be the signer's public key (cannot be NULL)
- *      n_coeffs: number of shards in the above list (the threshold `k` in a `k`-of-`n` signature)
+ *  In: musig_config: MuSig configuration (cannot be NULL)
+ *        continuing: 0 on first call (set seckey/pubkey), 1 on subsequent calls (update seckey/pubkey)
+ *         privshard: secret shard provided by the signer to the verifier; will be checked if non-NULL
+ *            my_idx: index of verifier's privaty shard
+ *          pubcoeff: list of public coefficients, the first of which will be the signer's public
+ *                    key (cannot be NULL)
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_shard(
     const secp256k1_context *ctx,
     secp256k1_scratch_space *scratch,
     secp256k1_musig_secret_key *seckey,
     secp256k1_pubkey *pubkey,
-    size_t n_keys,
+    const secp256k1_musig_config *musig_config,
     int continuing,
     const unsigned char *privshard,
     size_t my_idx,
-    const secp256k1_pubkey *pubcoeff,
-    size_t n_coeffs
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(9);
+    const secp256k1_pubkey *pubcoeff
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(9);
 
 /** Produces a partial signature
  *
@@ -361,16 +435,15 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_verify_shard(
  *                then the nonce is effectively the tuple (secnon, sec_adaptor) and every tuple MUST
  *                only be used once. In practice that means calling partial_sign with (secnon,
  *                sec_adaptor) and then with (secnon, NULL).
- *  In:   seckey: secret signing key to use (cannot be NULL)
- *   combined_pk: combined public key of all signers (cannot be NULL)
- *         msg32: 32-byte message to be signed (cannot be NULL)
- *          data: array of public nonces and/or keyshards of all signers including this signer (cannot be NULL).
- *                The order of signers must be the same as in combine_pubkey.
- *     n_signers: number of entries in the above array
- *      my_index: index of the caller in the array of signer data
- *   sec_adaptor: 32-byte secret value to be subtracted from the signature, if an adaptor
- *                signature is to be produced. Should be set to NULL for a normal
- *                partial signature.
+ *  In: musig_config: MuSig configuration (cannot be NULL)
+ *            seckey: secret signing key to use (cannot be NULL)
+ *             msg32: 32-byte message to be signed (cannot be NULL)
+ *              data: array of public nonces and/or keyshards of all signers including this signer (cannot be NULL).
+ *                    The order of signers must be the same as in combine_pubkey.
+ *          my_index: index of the caller in the array of signer data
+ *       sec_adaptor: 32-byte secret value to be subtracted from the signature, if an adaptor
+ *                    signature is to be produced. Should be set to NULL for a normal
+ *                    partial signature.
  */
 SECP256K1_API int secp256k1_musig_partial_sign(
     const secp256k1_context* ctx,
@@ -378,11 +451,10 @@ SECP256K1_API int secp256k1_musig_partial_sign(
     secp256k1_musig_partial_signature *partial_sig,
     secp256k1_musig_validation_aux *aux,
     unsigned char *secnon,
+    const secp256k1_musig_config *musig_config,
     const secp256k1_musig_secret_key *seckey,
-    const secp256k1_pubkey *combined_pk,
     const unsigned char *msg32,
     const secp256k1_musig_signer_data *data,
-    size_t n_signers,
     size_t my_index,
     const unsigned char *sec_adaptor
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6) SECP256K1_ARG_NONNULL(7) SECP256K1_ARG_NONNULL(8) SECP256K1_ARG_NONNULL(9);
@@ -449,24 +521,22 @@ SECP256K1_API int secp256k1_musig_adaptor_signature_adapt(
  *           0: some partial signature had s/r out of range
  *  Args:         ctx: pointer to a context object (cannot be NULL)
  *  Out:          sig: complete signature (cannot be NULL)
- *  In:   partial_sig: array of partial signatures to combine (cannot be NULL)
+ *  In:  musig_config: MuSig configuration (cannot be NULL)
+ *        partial_sig: array of partial signatures to combine (cannot be NULL)
  *             n_sigs: number of signatures in the above array
  *               data: signer data of all signers including missing ones (cannot be NULL).
  *                     The order of signers must be the same as in combine_pubkey.
- *          n_signers: number of entries in the above array
  *                aux: auxillary data from `partial_sign` (cannot be NULL)
- *      taproot_tweak: the 32-byte Taproot tweak or NULL if Taproot is unused
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_combine(
     const secp256k1_context* ctx,
     secp256k1_musig_signature *sig,
+    const secp256k1_musig_config *musig_config,
     const secp256k1_musig_partial_signature *partial_sig,
     size_t n_sigs,
     const secp256k1_musig_signer_data *data,
-    size_t n_signers,
-    const secp256k1_musig_validation_aux *aux,
-    const unsigned char *taproot_tweak
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(7);
+    const secp256k1_musig_validation_aux *aux
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(6) SECP256K1_ARG_NONNULL(7);
 
 /** Extracts a secret from a complete signature and an earlier-received adaptor signature
  *
@@ -474,22 +544,22 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_musig_partial_sig_combi
  *           0: signatures were invalid or didn't have same nonce
  *  Args:         ctx: pointer to a context object (cannot be NULL)
  *  Out:  sec_adaptor: pointer to array to be filled with 32-byte extracted secret (cannot be NULL)
- *  In:      full_sig: complete signature (cannot be NULL)
+ *  In:  musig_config: MuSig configuration (cannot be NULL)
+ *           full_sig: complete signature (cannot be NULL)
  *        partial_sig: partial non-adaptor signature (in a many-party scheme this should be the
  *                     sum of all partial signatures that are not the adaptor signature) (cannot be NULL)
  *        adaptor_sig: adaptor signature to extract secret from (cannot be NULL)
  *                aux: auxillary data from `partial_sign` (cannot be NULL if Taproot is used)
- *      taproot_tweak: the Taproot tweak, or NULL if Taproot is unused
  */
 SECP256K1_API int secp256k1_musig_adaptor_signature_extract_secret(
     const secp256k1_context* ctx,
     unsigned char *sec_adaptor,
+    const secp256k1_musig_config *musig_config,
     const secp256k1_musig_signature *full_sig,
     const secp256k1_musig_partial_signature *partial_sig,
     const secp256k1_musig_partial_signature *adaptor_sig,
-    const secp256k1_musig_validation_aux *aux,
-    const unsigned char *taproot_tweak
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+    const secp256k1_musig_validation_aux *aux
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5) SECP256K1_ARG_NONNULL(6);
 
 /** Uses a secret to adapt an adaptor signature into a partial signature
  *
