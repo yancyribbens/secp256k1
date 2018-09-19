@@ -1008,15 +1008,15 @@ int secp256k1_musig_verify_1(const secp256k1_context* ctx, const secp256k1_musig
 }
 
 typedef struct {
+    size_t offset;
     const secp256k1_context *ctx;
     unsigned char chacha_seed[32];
     secp256k1_scalar randomizer_cache[2];
     const secp256k1_musig_signature *const *sig;
     const unsigned char *const *msg32;
     const secp256k1_pubkey *const *pk;
-    secp256k1_ge *taproot_pkdiff;
     size_t n_sigs;
-} secp256k1_musig_verify_ecmult_context;
+} secp256k1_schnorr_verify_ecmult_context;
 
 /*
  * Fills r[0] and r[1] with randomizer scalars to be used in batch
@@ -1029,58 +1029,90 @@ static void secp256k1_musig_batch_randomizer(secp256k1_scalar *r, const unsigned
     }
 }
 
-static int secp256k1_musig_verify_ecmult_callback(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
-    secp256k1_musig_verify_ecmult_context *ctx = (secp256k1_musig_verify_ecmult_context *) data;
+static int secp256k1_schnorr_verify_ecmult_callback(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
+    secp256k1_schnorr_verify_ecmult_context *ecmult_data = (secp256k1_schnorr_verify_ecmult_context *) data;
 
-    if (idx < 2 * ctx->n_sigs) {
-        if (idx % 4 == 0) {
-            secp256k1_musig_batch_randomizer(ctx->randomizer_cache, ctx->chacha_seed, idx / 4);
-        }
-
-        /* -R */
-        if (idx % 2 == 0) {
-            secp256k1_fe rx;
-            secp256k1_scalar_negate(sc, &ctx->randomizer_cache[(idx / 2) % 2]);
-            if (!secp256k1_fe_set_b32(&rx, &ctx->sig[idx / 2]->data[0])) {
-                return 0;
-            }
-            if (!secp256k1_ge_set_xquad(pt, &rx)) {
-                return 0;
-            }
-        /* -eP */
-        } else {
-            unsigned char buf[33];
-            size_t buflen = sizeof(buf);
-            secp256k1_sha256 sha;
-            secp256k1_sha256_initialize(&sha);
-            secp256k1_sha256_write(&sha, &ctx->sig[idx / 2]->data[0], 32);
-            secp256k1_ec_pubkey_serialize(ctx->ctx, buf, &buflen, ctx->pk[idx / 2], SECP256K1_EC_COMPRESSED);
-            secp256k1_sha256_write(&sha, buf, buflen);
-            secp256k1_sha256_write(&sha, ctx->msg32[idx / 2], 32);
-            secp256k1_sha256_finalize(&sha, buf);
-
-            secp256k1_scalar_set_b32(sc, buf, NULL);
-            secp256k1_scalar_negate(sc, sc);
-            secp256k1_scalar_mul(sc, sc, &ctx->randomizer_cache[(idx / 2) % 2]);
-
-            if (!secp256k1_pubkey_load(ctx->ctx, pt, ctx->pk[idx / 2])) {
-                return 0;
-            }
-        }
-    } else {
-        if (idx % 2 == 0) {
-            secp256k1_musig_batch_randomizer(ctx->randomizer_cache, ctx->chacha_seed, idx / 2);
-        }
-        *sc = ctx->randomizer_cache[idx % 2];
-        *pt = ctx->taproot_pkdiff[idx - 2 * ctx->n_sigs];
+    if (idx % 4 == 0) {
+        secp256k1_musig_batch_randomizer(ecmult_data->randomizer_cache, ecmult_data->chacha_seed, idx / 4);
     }
+
+    /* -R */
+    if (idx % 2 == 0) {
+        secp256k1_fe rx;
+        secp256k1_scalar_negate(sc, &ecmult_data->randomizer_cache[(idx / 2) % 2]);
+        if (!secp256k1_fe_set_b32(&rx, &ecmult_data->sig[idx / 2]->data[0])) {
+            return 0;
+        }
+        if (!secp256k1_ge_set_xquad(pt, &rx)) {
+            return 0;
+        }
+    /* -eP */
+    } else {
+        unsigned char buf[33];
+        size_t buflen = sizeof(buf);
+        secp256k1_sha256 sha;
+        secp256k1_sha256_initialize(&sha);
+        secp256k1_sha256_write(&sha, &ecmult_data->sig[idx / 2]->data[0], 32);
+        secp256k1_ec_pubkey_serialize(ecmult_data->ctx, buf, &buflen, ecmult_data->pk[idx / 2], SECP256K1_EC_COMPRESSED);
+        secp256k1_sha256_write(&sha, buf, buflen);
+        secp256k1_sha256_write(&sha, ecmult_data->msg32[idx / 2], 32);
+        secp256k1_sha256_finalize(&sha, buf);
+
+        secp256k1_scalar_set_b32(sc, buf, NULL);
+        secp256k1_scalar_negate(sc, sc);
+        secp256k1_scalar_mul(sc, sc, &ecmult_data->randomizer_cache[(idx / 2) % 2]);
+
+        if (!secp256k1_pubkey_load(ecmult_data->ctx, pt, ecmult_data->pk[idx / 2])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int secp256k1_schnorr_verify_init_randomizer(const secp256k1_context *ctx, secp256k1_schnorr_verify_ecmult_context *ecmult_data, secp256k1_sha256 *sha, const secp256k1_musig_signature *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs) {
+    size_t i;
+
+    if (n_sigs > 0) {
+        ARG_CHECK(sig != NULL);
+        ARG_CHECK(msg32 != NULL);
+        ARG_CHECK(pk != NULL);
+    }
+
+    for (i = 0; i < n_sigs; i++) {
+        secp256k1_sha256_write(sha, sig[i]->data, 64);
+    }
+    ecmult_data->sig = sig;
+    ecmult_data->msg32 = msg32;
+    ecmult_data->pk = pk;
+    ecmult_data->n_sigs = n_sigs;
 
     return 1;
 }
 
-int secp256k1_musig_verify(const secp256k1_context* ctx, secp256k1_scratch *scratch, const secp256k1_musig_signature *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs, const secp256k1_pubkey *const *taproot_untweaked, const secp256k1_pubkey *const *taproot_tweaked, const unsigned char *const *tweak32, size_t n_tweaks, secp256k1_taproot_hash_function hashfp, void *hdata) {
-    secp256k1_musig_verify_ecmult_context ecmult_data;
+int secp256k1_schnorr_verify_init(secp256k1_schnorr_verify_ecmult_context *ecmult_data, secp256k1_scalar *s, const secp256k1_musig_signature *const *sig, size_t n_sigs) {
     size_t i;
+    int ret = 1;
+
+    for (i = 0; i < n_sigs; i++) {
+        int overflow;
+        secp256k1_scalar term;
+        if (i % 2 == 0) {
+            secp256k1_musig_batch_randomizer(ecmult_data->randomizer_cache, ecmult_data->chacha_seed, i / 2);
+        }
+
+        secp256k1_scalar_set_b32(&term, &sig[i]->data[32], &overflow);
+        if (overflow) {
+            ret = 0;
+            break;
+        }
+        secp256k1_scalar_mul(&term, &term, &ecmult_data->randomizer_cache[i % 2]);
+        secp256k1_scalar_add(s, s, &term);
+    }
+    return ret;
+}
+
+int secp256k1_schnorr_verify(const secp256k1_context *ctx, secp256k1_scratch *scratch, const secp256k1_musig_signature *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs) {
+    secp256k1_schnorr_verify_ecmult_context ecmult_data;
     secp256k1_sha256 sha;
     secp256k1_scalar s;
     secp256k1_gej rj;
@@ -1089,21 +1121,65 @@ int secp256k1_musig_verify(const secp256k1_context* ctx, secp256k1_scratch *scra
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
     ARG_CHECK(scratch != NULL);
-    if (n_sigs > 0) {
-        ARG_CHECK(sig != NULL);
-        ARG_CHECK(msg32 != NULL);
-        ARG_CHECK(pk != NULL);
+
+    ecmult_data.ctx = ctx;
+    secp256k1_sha256_initialize(&sha);
+    if(!secp256k1_schnorr_verify_init_randomizer(ctx, &ecmult_data, &sha, sig, msg32, pk, n_sigs)) {
+        return 0;
     }
+    secp256k1_sha256_finalize(&sha, ecmult_data.chacha_seed);
+
+    secp256k1_scalar_clear(&s);
+    ret = secp256k1_schnorr_verify_init(&ecmult_data, &s, sig, n_sigs);
+
+    ret &= secp256k1_ecmult_multi_var(&ctx->ecmult_ctx, scratch, &rj, &s, secp256k1_schnorr_verify_ecmult_callback, (void *) &ecmult_data, 2 * n_sigs);
+    ret &= secp256k1_gej_is_infinity(&rj);
+
+    return ret;
+}
+
+typedef struct {
+    size_t offset;
+    unsigned char chacha_seed[32];
+    secp256k1_scalar randomizer_cache[2];
+    secp256k1_ge *taproot_pkdiff;
+} secp256k1_taproot_verify_ecmult_context;
+
+typedef struct {
+    secp256k1_schnorr_verify_ecmult_context schnorr;
+    secp256k1_taproot_verify_ecmult_context taproot;
+} secp256k1_musig_verify_ecmult_context;
+
+static int secp256k1_taproot_verify_ecmult_callback(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
+    secp256k1_taproot_verify_ecmult_context *ecmult_data = (secp256k1_taproot_verify_ecmult_context *) data;
+
+    if (idx % 2 == 0) {
+        secp256k1_musig_batch_randomizer(ecmult_data->randomizer_cache, ecmult_data->chacha_seed, idx / 2);
+    }
+    *sc = ecmult_data->randomizer_cache[idx % 2];
+    *pt = ecmult_data->taproot_pkdiff[idx - 2 * ecmult_data->offset];
+    return 1;
+}
+
+static int secp256k1_musig_verify_ecmult_callback(secp256k1_scalar *sc, secp256k1_ge *pt, size_t idx, void *data) {
+    secp256k1_musig_verify_ecmult_context *ecmult_data = (secp256k1_musig_verify_ecmult_context *) data;
+
+    if (idx < 2 * ecmult_data->schnorr.n_sigs) {
+        return secp256k1_schnorr_verify_ecmult_callback(sc, pt, idx, (void *) &ecmult_data->schnorr);
+    } else {
+        return secp256k1_taproot_verify_ecmult_callback(sc, pt, idx, (void *) &ecmult_data->taproot);
+    }
+}
+
+int secp256k1_taproot_verify_init_randomizer(const secp256k1_context *ctx, secp256k1_sha256 *sha, const secp256k1_pubkey *const *taproot_untweaked, const secp256k1_pubkey *const *taproot_tweaked, const unsigned char *const *tweak32, size_t n_tweaks) {
+    size_t i;
+
     if (n_tweaks > 0) {
         ARG_CHECK(taproot_untweaked != NULL);
         ARG_CHECK(taproot_tweaked != NULL);
         ARG_CHECK(tweak32 != NULL);
     }
 
-    secp256k1_sha256_initialize(&sha);
-    for (i = 0; i < n_sigs; i++) {
-        secp256k1_sha256_write(&sha, sig[i]->data, 64);
-    }
     for (i = 0; i < n_tweaks; i++) {
         unsigned char buf[33];
         size_t buflen = sizeof(buf);
@@ -1111,85 +1187,98 @@ int secp256k1_musig_verify(const secp256k1_context* ctx, secp256k1_scratch *scra
         ARG_CHECK(taproot_tweaked != NULL);
         ARG_CHECK(tweak32 != NULL);
 
-        secp256k1_sha256_write(&sha, tweak32[i], 32);
+        secp256k1_sha256_write(sha, tweak32[i], 32);
         secp256k1_ec_pubkey_serialize(ctx, buf, &buflen, taproot_untweaked[i], SECP256K1_EC_COMPRESSED);
-        secp256k1_sha256_write(&sha, buf, 33);
+        secp256k1_sha256_write(sha, buf, 33);
         secp256k1_ec_pubkey_serialize(ctx, buf, &buflen, taproot_tweaked[i], SECP256K1_EC_COMPRESSED);
-        secp256k1_sha256_write(&sha, buf, 33);
+        secp256k1_sha256_write(sha, buf, 33);
     }
-    secp256k1_sha256_finalize(&sha, ecmult_data.chacha_seed);
-    ecmult_data.ctx = ctx;
-    ecmult_data.sig = sig;
-    ecmult_data.msg32 = msg32;
-    ecmult_data.pk = pk;
-    ecmult_data.n_sigs = n_sigs;
+    return 1;
+}
 
-    secp256k1_scalar_clear(&s);
+int secp256k1_taproot_verify_init(const secp256k1_context *ctx, secp256k1_taproot_verify_ecmult_context *ecmult_data, secp256k1_scratch *scratch, secp256k1_scalar *s, const secp256k1_pubkey *const *taproot_untweaked, const secp256k1_pubkey *const *taproot_tweaked, const unsigned char *const *tweak32, size_t n_tweaks, secp256k1_taproot_hash_function hashfp, void *hdata) {
+    size_t i;
+    secp256k1_gej *tmpj;
 
-    if (n_tweaks > 0) {
-        secp256k1_gej *tmpj;
+    if (n_tweaks == 0) {
+        return 1;
+    }
 
-        if (secp256k1_scratch_allocate_frame(scratch, n_tweaks * sizeof(secp256k1_ge), 1) == 0) {
-            return 0;
+    if (secp256k1_scratch_allocate_frame(scratch, n_tweaks * sizeof(secp256k1_ge), 1) == 0) {
+        return 0;
+    }
+    ecmult_data->taproot_pkdiff = (secp256k1_ge *)secp256k1_scratch_alloc(scratch, n_tweaks * sizeof(secp256k1_ge));
+
+    if (secp256k1_scratch_allocate_frame(scratch, n_tweaks * sizeof(secp256k1_gej), 1) == 0) {
+        secp256k1_scratch_deallocate_frame(scratch);
+        return 0;
+    }
+    tmpj = (secp256k1_gej *)secp256k1_scratch_alloc(scratch, n_tweaks * sizeof(*tmpj));
+
+    if (hashfp == NULL) {
+        hashfp = secp256k1_taproot_hash_default;
+    }
+
+    for (i = 0; i < n_tweaks; i++) {
+        secp256k1_ge untweaked;
+        secp256k1_ge tweaked;
+        unsigned char tweak[32];
+        secp256k1_scalar tweaks;
+
+        /* compute tweaked - untweaked point */
+        secp256k1_pubkey_load(ctx, &untweaked, taproot_untweaked[i]);
+        secp256k1_pubkey_load(ctx, &tweaked, taproot_tweaked[i]);
+
+        secp256k1_gej_set_ge(&tmpj[i], &tweaked);
+        secp256k1_gej_neg(&tmpj[i], &tmpj[i]);
+        secp256k1_gej_add_ge_var(&tmpj[i], &tmpj[i], &untweaked, NULL);
+
+        /* compute (rerandomized) addition to s */
+        if (i % 2 == 0) {
+            secp256k1_musig_batch_randomizer(ecmult_data->randomizer_cache, ecmult_data->chacha_seed, ecmult_data->offset + i / 2);
         }
-        ecmult_data.taproot_pkdiff = (secp256k1_ge *)secp256k1_scratch_alloc(scratch, n_tweaks * sizeof(secp256k1_ge));
-
-        if (secp256k1_scratch_allocate_frame(scratch, n_tweaks * sizeof(secp256k1_gej), 1) == 0) {
+        if(!hashfp(tweak, taproot_untweaked[i], tweak32[i], hdata)) {
+            secp256k1_scratch_deallocate_frame(scratch);
             secp256k1_scratch_deallocate_frame(scratch);
             return 0;
         }
-        tmpj = (secp256k1_gej *)secp256k1_scratch_alloc(scratch, n_tweaks * sizeof(*tmpj));
-
-        if (hashfp == NULL) {
-            hashfp = secp256k1_taproot_hash_default;
-        }
-
-        for (i = 0; i < n_tweaks; i++) {
-            secp256k1_ge untweaked;
-            secp256k1_ge tweaked;
-            unsigned char tweak[32];
-            secp256k1_scalar tweaks;
-
-            /* compute tweaked - untweaked point */
-            secp256k1_pubkey_load(ctx, &untweaked, taproot_untweaked[i]);
-            secp256k1_pubkey_load(ctx, &tweaked, taproot_tweaked[i]);
-
-            secp256k1_gej_set_ge(&tmpj[i], &tweaked);
-            secp256k1_gej_neg(&tmpj[i], &tmpj[i]);
-            secp256k1_gej_add_ge_var(&tmpj[i], &tmpj[i], &untweaked, NULL);
-
-            /* compute (rerandomized) addition to s */
-            if (i % 2 == 0) {
-                secp256k1_musig_batch_randomizer(ecmult_data.randomizer_cache, ecmult_data.chacha_seed, n_sigs + i / 2);
-            }
-            if(!hashfp(tweak, taproot_untweaked[i], tweak32[i], hdata)) {
-                secp256k1_scratch_deallocate_frame(scratch);
-                secp256k1_scratch_deallocate_frame(scratch);
-                return 0;
-            }
-            secp256k1_scalar_set_b32(&tweaks, tweak, NULL);
-            secp256k1_scalar_mul(&tweaks, &tweaks, &ecmult_data.randomizer_cache[i % 2]);
-            secp256k1_scalar_add(&s, &s, &tweaks);
-        }
-        secp256k1_ge_set_all_gej_var(ecmult_data.taproot_pkdiff, tmpj, n_tweaks);
-        secp256k1_scratch_deallocate_frame(scratch);
+        secp256k1_scalar_set_b32(&tweaks, tweak, NULL);
+        secp256k1_scalar_mul(&tweaks, &tweaks, &ecmult_data->randomizer_cache[i % 2]);
+        secp256k1_scalar_add(s, s, &tweaks);
     }
+    secp256k1_ge_set_all_gej_var(ecmult_data->taproot_pkdiff, tmpj, n_tweaks);
+    secp256k1_scratch_deallocate_frame(scratch);
+    return 1;
+}
 
-    for (i = 0; i < n_sigs; i++) {
-        int overflow;
-        secp256k1_scalar term;
-        if (i % 2 == 0) {
-            secp256k1_musig_batch_randomizer(ecmult_data.randomizer_cache, ecmult_data.chacha_seed, i / 2);
-        }
+int secp256k1_musig_verify(const secp256k1_context *ctx, secp256k1_scratch *scratch, const secp256k1_musig_signature *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs, const secp256k1_pubkey *const *taproot_untweaked, const secp256k1_pubkey *const *taproot_tweaked, const unsigned char *const *tweak32, size_t n_tweaks, secp256k1_taproot_hash_function hashfp, void *hdata) {
+    secp256k1_musig_verify_ecmult_context ecmult_data;
+    secp256k1_sha256 sha;
+    secp256k1_scalar s;
+    secp256k1_gej rj;
+    int ret = 1;
 
-        secp256k1_scalar_set_b32(&term, &sig[i]->data[32], &overflow);
-        if (overflow) {
-            ret = 0;
-            break;
-        }
-        secp256k1_scalar_mul(&term, &term, &ecmult_data.randomizer_cache[i % 2]);
-        secp256k1_scalar_add(&s, &s, &term);
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(scratch != NULL);
+
+    ecmult_data.schnorr.ctx = ctx;
+    ecmult_data.taproot.offset = n_sigs;
+    secp256k1_sha256_initialize(&sha);
+    if(!secp256k1_schnorr_verify_init_randomizer(ctx, &ecmult_data.schnorr, &sha, sig, msg32, pk, n_sigs)) {
+        return 0;
     }
+    if (!secp256k1_taproot_verify_init_randomizer(ctx, &sha, taproot_untweaked,taproot_tweaked, tweak32, n_tweaks)) {
+        return 0;
+    }
+    secp256k1_sha256_finalize(&sha, ecmult_data.schnorr.chacha_seed);
+    memcpy(ecmult_data.taproot.chacha_seed, ecmult_data.schnorr.chacha_seed, 32);
+
+    secp256k1_scalar_clear(&s);
+    if(!secp256k1_taproot_verify_init(ctx, &ecmult_data.taproot, scratch, &s, taproot_untweaked, taproot_tweaked, tweak32, n_tweaks, hashfp, hdata)) {
+        return 0;
+    }
+    ret = secp256k1_schnorr_verify_init(&ecmult_data.schnorr, &s, sig, n_sigs);
 
     ret &= secp256k1_ecmult_multi_var(&ctx->ecmult_ctx, scratch, &rj, &s, secp256k1_musig_verify_ecmult_callback, (void *) &ecmult_data, 2 * n_sigs + n_tweaks);
     ret &= secp256k1_gej_is_infinity(&rj);
