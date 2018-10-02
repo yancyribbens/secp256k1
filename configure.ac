@@ -459,7 +459,6 @@ AC_MSG_NOTICE([Using endomorphism optimizations: $use_endomorphism])
 AC_MSG_NOTICE([Building benchmarks: $use_benchmark])
 AC_MSG_NOTICE([Building for coverage analysis: $enable_coverage])
 AC_MSG_NOTICE([Building ECDH module: $enable_module_ecdh])
-AC_MSG_NOTICE([Building schnorrsig module: $enable_module_schnorrsig])
 AC_MSG_NOTICE([Building ECDSA pubkey recovery module: $enable_module_recovery])
 AC_MSG_NOTICE([Using jni: $use_jni])
 
