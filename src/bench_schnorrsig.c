@@ -76,13 +76,13 @@ int main(void) {
 
     data.ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY | SECP256K1_CONTEXT_SIGN);
     data.scratch = secp256k1_scratch_space_create(data.ctx, 1024 * 1024 * 1024);
-    data.pk = (const unsigned char **)malloc(MAX_SIGS * 33);
-    data.msgs = (const unsigned char **)malloc(MAX_SIGS * 32);
-    data.sigs = (const secp256k1_schnorrsig **)malloc(MAX_SIGS * sizeof(*data.sigs));
+    data.pk = (const unsigned char **)malloc(MAX_SIGS * sizeof(unsigned char *));
+    data.msgs = (const unsigned char **)malloc(MAX_SIGS * sizeof(unsigned char *));
+    data.sigs = (const secp256k1_schnorrsig **)malloc(MAX_SIGS * sizeof(secp256k1_schnorrsig *));
 
     for (i = 0; i < MAX_SIGS; i++) {
         unsigned char sk[32];
-        unsigned char *msg = malloc(32);
+        unsigned char *msg = (unsigned char *)malloc(32);
         secp256k1_schnorrsig *sig = (secp256k1_schnorrsig *)malloc(sizeof(*sig));
         unsigned char *pk_char = (unsigned char *)malloc(33);
         secp256k1_pubkey pk;
