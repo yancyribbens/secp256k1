@@ -29,7 +29,7 @@ int secp256k1_schnorrsig_parse(const secp256k1_context* ctx, secp256k1_schnorrsi
     return 1;
 }
 
-int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function noncefp, const void *ndata) {
+int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function noncefp, void *ndata) {
     secp256k1_scalar x;
     secp256k1_scalar e;
     secp256k1_scalar k;
