@@ -101,8 +101,8 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify(
  *         msg32: array of messages, or NULL if there are no signatures
  *            pk: array of public keys, or NULL if there are no signatures
  *        n_sigs: number of signatures in above arrays. Must be smaller than
- *                2^31 and smaller than 2^(sizeof(size_t)*8-1) i.e. half the
- *                maximum size_t value. Must be 0 if above arrays are NULL.
+ *                2^31 and smaller than half the maximum size_t value. Must be 0
+ *                if above arrays are NULL.
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify_batch(
     const secp256k1_context* ctx,

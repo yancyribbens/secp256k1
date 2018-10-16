@@ -191,8 +191,7 @@ static int secp256k1_schnorrsig_verify_batch_ecmult_callback(secp256k1_scalar *s
     /* R */
     if (idx % 2 == 0) {
         secp256k1_fe rx;
-        secp256k1_scalar_clear(sc);
-        secp256k1_scalar_add(sc, sc, &ecmult_context->randomizer_cache[(idx / 2) % 2]);
+        *sc = ecmult_context->randomizer_cache[(idx / 2) % 2];
         if (!secp256k1_fe_set_b32(&rx, &ecmult_context->sig[idx / 2]->data[0])) {
             return 0;
         }
@@ -308,9 +307,9 @@ int secp256k1_schnorrsig_verify_batch(const secp256k1_context *ctx, secp256k1_sc
     ARG_CHECK(scratch != NULL);
     /* Check that n_sigs is less than half of the maximum size_t value. This is necessary because
      * the number of points given to ecmult_multi is 2*n_sigs. */
-    ARG_CHECK(n_sigs < (size_t)1 << (sizeof(size_t)*8-1));
-    /* Check that n_sigs is less 2^31 to ensure the same behavior of this function on 32-bit and
-     * 64-bit platforms. */
+    ARG_CHECK(n_sigs <= (size_t)-1 / 2);
+    /* Check that n_sigs is less than 2^31 to ensure the same behavior of this function on 32-bit
+     * and 64-bit platforms. */
     ARG_CHECK(n_sigs < (size_t)(1 << 31));
 
     secp256k1_sha256_initialize(&sha);
