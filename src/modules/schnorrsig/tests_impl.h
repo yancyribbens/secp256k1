@@ -548,6 +548,46 @@ void test_schnorrsig_bip_vectors(secp256k1_scratch_space *scratch) {
     }
 }
 
+/* Nonce function that returns constant 0 */
+static int nonce_function_failing(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
+    (void) msg32;
+    (void) key32;
+    (void) algo16;
+    (void) data;
+    (void) counter;
+    (void) nonce32;
+    return 0;
+}
+
+/* Nonce function that sets nonce to 0 */
+static int nonce_function_0(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
+    (void) msg32;
+    (void) key32;
+    (void) algo16;
+    (void) data;
+    (void) counter;
+
+    memset(nonce32, 0, 32);
+    return 1;
+}
+
+void test_schnorrsig_sign(void) {
+    unsigned char sk[32];
+    const unsigned char msg[32] = "this is a msg for a schnorrsig..";
+    secp256k1_schnorrsig sig;
+
+    memset(sk, 23, sizeof(sk));
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 1);
+
+    /* Overflowing secret key */
+    memset(sk, 0xFF, sizeof(sk));
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 0);
+    memset(sk, 23, sizeof(sk));
+
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, nonce_function_failing, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, nonce_function_0, NULL) == 0);
+}
+
 #define N_SIGS  200
 /* Creates N_SIGS valid signatures and verifies them with verify and verify_batch. Then flips some
  * bits and checks that verification now fails. */
@@ -615,6 +655,7 @@ void run_schnorrsig_tests(void) {
     test_schnorrsig_serialize();
     test_schnorrsig_api(scratch);
     test_schnorrsig_bip_vectors(scratch);
+    test_schnorrsig_sign();
     test_schnorrsig_sign_verify(scratch);
 
     secp256k1_scratch_space_destroy(scratch);
