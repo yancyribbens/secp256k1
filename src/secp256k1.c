@@ -327,6 +327,7 @@ static SECP256K1_INLINE void buffer_append(unsigned char *buf, unsigned int *off
 static int secp256k1_nonce_function_bipschnorr(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
     secp256k1_sha256 sha;
     (void) data;
+    (void) counter;
     VERIFY_CHECK(counter == 0);
 
     /* Hash x||msg as per the spec */
