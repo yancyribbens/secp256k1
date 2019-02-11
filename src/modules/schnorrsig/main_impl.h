@@ -240,7 +240,7 @@ static int secp256k1_schnorrsig_verify_batch_ecmult_callback(secp256k1_scalar *s
  *            pk: array of public keys, or NULL if there are no signatures
  *        n_sigs: number of signatures in above arrays (must be 0 if they are NULL)
  */
-int secp256k1_schnorrsig_verify_batch_init_randomizer(const secp256k1_context *ctx, secp256k1_schnorrsig_verify_ecmult_context *ecmult_context, secp256k1_sha256 *sha, const secp256k1_schnorrsig *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs) {
+static int secp256k1_schnorrsig_verify_batch_init_randomizer(const secp256k1_context *ctx, secp256k1_schnorrsig_verify_ecmult_context *ecmult_context, secp256k1_sha256 *sha, const secp256k1_schnorrsig *const *sig, const unsigned char *const *msg32, const secp256k1_pubkey *const *pk, size_t n_sigs) {
     size_t i;
 
     if (n_sigs > 0) {
@@ -276,7 +276,7 @@ int secp256k1_schnorrsig_verify_batch_init_randomizer(const secp256k1_context *c
  *        sig: array of signatures, or NULL if there are no signatures
  *     n_sigs: number of signatures in above array (must be 0 if they are NULL)
  */
-int secp256k1_schnorrsig_verify_batch_sum_s(secp256k1_scalar *s, unsigned char *chacha_seed, const secp256k1_schnorrsig *const *sig, size_t n_sigs) {
+static int secp256k1_schnorrsig_verify_batch_sum_s(secp256k1_scalar *s, unsigned char *chacha_seed, const secp256k1_schnorrsig *const *sig, size_t n_sigs) {
     secp256k1_scalar randomizer_cache[2];
     size_t i;
 
