@@ -316,7 +316,7 @@ int secp256k1_schnorrsig_verify_batch(const secp256k1_context *ctx, secp256k1_sc
     ARG_CHECK(n_sigs <= SIZE_MAX / 2);
     /* Check that n_sigs is less than 2^31 to ensure the same behavior of this function on 32-bit
      * and 64-bit platforms. */
-    ARG_CHECK(n_sigs < (size_t)(1 << 31));
+    ARG_CHECK(n_sigs < ((uint32_t)1 << 31));
 
     secp256k1_sha256_initialize(&sha);
     if (!secp256k1_schnorrsig_verify_batch_init_randomizer(ctx, &ecmult_context, &sha, sig, msg32, pk, n_sigs)) {
