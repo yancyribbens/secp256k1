@@ -69,7 +69,7 @@ SECP256K1_API int secp256k1_schnorrsig_parse(
  *  Out:     sig: pointer to the returned signature (cannot be NULL)
  *       nonce_is_negated: a pointer to an integer indicates if signing algorithm negated the
  *                nonce (can be NULL)
- *  In:    msg32: the 32-byte message hash being signed (cannot be NULL)
+ *  In:    msg32: the 32-byte message being signed (cannot be NULL)
  *        seckey: pointer to a 32-byte secret key (cannot be NULL)
  *       noncefp: pointer to a nonce generation function. If NULL, secp256k1_nonce_function_bipschnorr is used
  *         ndata: pointer to arbitrary data used by the nonce generation function (can be NULL)
@@ -90,7 +90,7 @@ SECP256K1_API int secp256k1_schnorrsig_sign(
  *           0: incorrect or unparseable signature
  *  Args:    ctx: a secp256k1 context object, initialized for verification.
  *  In:      sig: the signature being verified (cannot be NULL)
- *         msg32: the 32-byte message hash being verified (cannot be NULL)
+ *         msg32: the 32-byte message being verified (cannot be NULL)
  *        pubkey: pointer to a public key to verify with (cannot be NULL)
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify(
