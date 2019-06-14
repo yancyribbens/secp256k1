@@ -85,4 +85,14 @@ static void *secp256k1_scratch_alloc(const secp256k1_callback* error_callback, s
     return ret;
 }
 
+static size_t secp256k1_scratch_alloc_size(size_t *sizes, size_t n_sizes) {
+    size_t i;
+    size_t sum = 0;
+
+    for (i = 0; i < n_sizes; i++) {
+        sum += ROUND_TO_ALIGN(sizes[i]);
+    }
+    return sum;
+}
+
 #endif
