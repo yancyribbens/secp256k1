@@ -732,9 +732,29 @@ static int secp256k1_ecmult_strauss_batch(const secp256k1_callback* error_callba
 static int secp256k1_ecmult_strauss_batch_single(const secp256k1_callback* error_callback, const secp256k1_ecmult_context *actx, secp256k1_scratch *scratch, secp256k1_gej *r, const secp256k1_scalar *inp_g_sc, secp256k1_ecmult_multi_callback cb, void *cbdata, size_t n) {
     return secp256k1_ecmult_strauss_batch(error_callback, actx, scratch, r, inp_g_sc, cb, cbdata, n, 0);
 }
-
+/**
+ * Returns the maximum number of points in addition to G that can be used with
+ * a given scratch space. For a given number of points, calling this function
+ * with a scratch space with strauss_scratch_size left will return the given
+ * number.
+ */
 static size_t secp256k1_strauss_max_points(const secp256k1_callback* error_callback, secp256k1_scratch *scratch) {
-    return secp256k1_scratch_max_allocation(error_callback, scratch, STRAUSS_SCRATCH_OBJECTS) / secp256k1_strauss_scratch_size(1);
+    /* Call max_allocation with 0 objects because otherwise it would assume
+     * worst case padding but in this function we want to be exact. */
+    size_t max_alloc = secp256k1_scratch_max_allocation(error_callback, scratch, 0);
+    size_t unpadded_single_size = secp256k1_strauss_scratch_size_raw(1, 0);
+    size_t n_points = max_alloc / unpadded_single_size;
+    if (n_points > 0
+              && max_alloc < secp256k1_strauss_scratch_size(n_points)) {
+        /* If there's not enough space after alignment is taken into
+         * account, it suffices to decrease n_points by one. This is because
+         * the maximum padding required is less than an entry. */
+        n_points -= 1;
+        VERIFY_CHECK(max_alloc >= secp256k1_strauss_scratch_size(n_points));
+        VERIFY_CHECK(max_alloc - secp256k1_scratch_max_allocation(error_callback, scratch, STRAUSS_SCRATCH_OBJECTS) < unpadded_single_size);
+    }
+
+    return n_points;
 }
 
 /** Convert a number to WNAF notation.
@@ -1151,12 +1171,17 @@ static int secp256k1_ecmult_pippenger_batch_single(const secp256k1_callback* err
 }
 
 /**
- * Returns the maximum number of points in addition to G that can be used with
- * a given scratch space. The function ensures that fewer points may also be
- * used.
+ * Returns the (near) maximum number of points in addition to G that can be
+ * used with a given scratch space. It may not return the actual maximum number
+ * of points possible. Otherwise, fewer points would not fit into the scratch
+ * space in general. For a given number of points, calling this function with a
+ * scratch space with pippenger_scratch_size left will return less than or
+ * equal than the given number.
  */
 static size_t secp256k1_pippenger_max_points(const secp256k1_callback* error_callback, secp256k1_scratch *scratch) {
-    size_t max_alloc = secp256k1_scratch_max_allocation(error_callback, scratch, PIPPENGER_SCRATCH_OBJECTS);
+    /* Call max_allocation with 0 objects because otherwise it would assume
+     * worst case padding but in this function we want to be exact. */
+    size_t max_alloc = secp256k1_scratch_max_allocation(error_callback, scratch, 0);
     int bucket_window;
     size_t res = 0;
 
@@ -1174,7 +1199,20 @@ static size_t secp256k1_pippenger_max_points(const secp256k1_callback* error_cal
         }
         space_for_points = max_alloc - space_constant;
 
+        /* Compute an upper bound for the number of points after subtracting
+         * space for the base point G. It's an upper bound because alignment is
+         * not taken into account. */
         n_points = (space_for_points - entry_size)/entry_size;
+        if (n_points > 0
+              && space_for_points < secp256k1_pippenger_scratch_size_points(n_points, bucket_window, 1)) {
+            /* If there's not enough space after alignment is taken into
+             * account, it suffices to decrease n_points by one. This is because
+             * the maximum padding required is less than an entry. */
+            n_points -= 1;
+            VERIFY_CHECK(max_alloc - secp256k1_scratch_max_allocation(error_callback, scratch, PIPPENGER_SCRATCH_OBJECTS) < entry_size);
+            VERIFY_CHECK(space_for_points >= secp256k1_pippenger_scratch_size_points(n_points, bucket_window, 1));
+        }
+
         n_points = n_points > max_points ? max_points : n_points;
         if (n_points > res) {
             res = n_points;
