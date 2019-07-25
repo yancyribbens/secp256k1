@@ -1199,10 +1199,9 @@ static size_t secp256k1_pippenger_max_points(const secp256k1_callback* error_cal
         }
         space_for_points = max_alloc - space_constant;
 
-        /* Compute an upper bound for the number of points after subtracting
-         * space for the base point G. It's an upper bound because alignment is
-         * not taken into account. */
-        n_points = (space_for_points - entry_size)/entry_size;
+        /* Compute an upper bound for the number excluding the base point G.
+         * It's an upper bound because alignment is not taken into account. */
+        n_points = space_for_points / entry_size - 1;
         if (n_points > 0
               && space_for_points < secp256k1_pippenger_scratch_size_points(n_points, bucket_window, 1)) {
             /* If there's not enough space after alignment is taken into
