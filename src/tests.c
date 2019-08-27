@@ -4104,6 +4104,114 @@ void run_eckey_edge_case_test(void) {
     secp256k1_context_set_illegal_callback(ctx, NULL, NULL);
 }
 
+void test_xonly_pubkey(void) {
+    unsigned char sk[32] = { 0 };
+    unsigned char ones32[32];
+    unsigned char zeros64[64] = { 0 };
+    secp256k1_pubkey xy_pk;
+    secp256k1_xonly_pubkey xonly_pk;
+    secp256k1_xonly_pubkey xonly_pk_tmp;
+    secp256k1_ge pk1;
+    secp256k1_ge pk2;
+    secp256k1_fe y;
+    unsigned char buf32[32];
+
+    /* sk = 0 should fail */
+    CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 0);
+
+    /* Choose a secret key such that pubkey and xonly_pubkey are each others
+     * negation. */
+    sk[0] = 2;
+    CHECK(secp256k1_ec_pubkey_create(ctx, &xy_pk, sk) == 1);
+    CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
+    secp256k1_pubkey_load(ctx, &pk1, &xy_pk);
+    secp256k1_pubkey_load(ctx, &pk2, (secp256k1_pubkey *) &xonly_pk);
+    CHECK(secp256k1_fe_equal(&pk1.x, &pk2.x) == 1);
+    secp256k1_fe_negate(&y, &pk2.y, 1);
+    CHECK(secp256k1_fe_equal(&pk1.y, &y) == 1);
+
+    /* Serialization and parse roundtrip */
+    CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
+    CHECK(secp256k1_xonly_pubkey_serialize(ctx, buf32, &xonly_pk) == 1);
+    CHECK(secp256k1_xonly_pubkey_parse(ctx, &xonly_pk_tmp, buf32) == 1);
+    CHECK(memcmp(&xonly_pk, &xonly_pk_tmp, sizeof(xonly_pk)) == 0);
+
+    /* Can't parse a byte string that's not a valid X coordinate */
+    memset(ones32, 0xFF, sizeof(ones32));
+    CHECK(secp256k1_xonly_pubkey_parse(ctx, &xonly_pk_tmp, ones32) == 0);
+    CHECK(memcmp(&xonly_pk_tmp, zeros64, sizeof(xonly_pk_tmp)) == 0);
+}
+
+void test_xonly_pubkey_api(void) {
+    secp256k1_xonly_pubkey pk;
+    unsigned char sk[32];
+    unsigned char buf32[32];
+    unsigned char ones32[32];
+    unsigned char zeros32[32] = { 0 };
+
+    /** setup **/
+    secp256k1_context *none = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    secp256k1_context *sign = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    secp256k1_context *vrfy = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    int ecount;
+
+    secp256k1_context_set_error_callback(none, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_error_callback(sign, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_error_callback(vrfy, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(none, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(sign, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(vrfy, counting_illegal_callback_fn, &ecount);
+
+    secp256k1_rand256(sk);
+    memset(ones32, 0xFF, 32);
+
+    ecount = 0;
+    CHECK(secp256k1_xonly_pubkey_create(none, &pk, sk) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_xonly_pubkey_create(sign, &pk, sk) == 1);
+    CHECK(secp256k1_xonly_pubkey_create(vrfy, &pk, sk) == 0);
+    CHECK(ecount == 2);
+    CHECK(secp256k1_xonly_pubkey_create(sign, NULL, sk) == 0);
+    CHECK(ecount == 3);
+    CHECK(secp256k1_xonly_pubkey_create(sign, &pk, NULL) == 0);
+    CHECK(ecount == 4);
+
+    CHECK(secp256k1_xonly_pubkey_create(sign, &pk, sk) == 1);
+    ecount = 0;
+    CHECK(secp256k1_xonly_pubkey_serialize(none, NULL, &pk) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_xonly_pubkey_serialize(none, buf32, NULL) == 0);
+    CHECK(memcmp(buf32, zeros32, 32) == 0);
+    CHECK(ecount == 2);
+    {
+        /* A pubkey filled with 0s will fail to serialize due to pubkey_load
+         * special casing. */
+        secp256k1_xonly_pubkey pk_tmp;
+        memset(&pk_tmp, 0, sizeof(pk_tmp));
+        CHECK(secp256k1_xonly_pubkey_serialize(none, buf32, &pk_tmp) == 0);
+    }
+    /* pubkey_load called illegal callback */
+    CHECK(ecount == 3);
+    CHECK(secp256k1_xonly_pubkey_serialize(none, buf32, &pk) == 1);
+
+    ecount = 0;
+    CHECK(secp256k1_xonly_pubkey_parse(none, NULL, buf32) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_xonly_pubkey_parse(none, &pk, NULL) == 0);
+    CHECK(ecount == 2);
+    /* Invalid field element */
+    CHECK(secp256k1_xonly_pubkey_parse(none, &pk, ones32) == 0);
+    CHECK(ecount == 2);
+    /* There's no point with x-coordinate 0 on secp256k1 */
+    CHECK(secp256k1_xonly_pubkey_parse(none, &pk, zeros32) == 0);
+    CHECK(ecount == 2);
+    CHECK(secp256k1_xonly_pubkey_parse(none, &pk, buf32) == 1);
+
+    secp256k1_context_destroy(none);
+    secp256k1_context_destroy(sign);
+    secp256k1_context_destroy(vrfy);
+}
+
 void random_sign(secp256k1_scalar *sigr, secp256k1_scalar *sigs, const secp256k1_scalar *key, const secp256k1_scalar *msg, int *recid) {
     secp256k1_scalar nonce;
     do {
@@ -5278,6 +5386,10 @@ int main(int argc, char **argv) {
 
     /* EC key edge cases */
     run_eckey_edge_case_test();
+
+    /* xonly key test cases */
+    test_xonly_pubkey();
+    test_xonly_pubkey_api();
 
 #ifdef ENABLE_MODULE_ECDH
     /* ecdh tests */

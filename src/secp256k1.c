@@ -705,6 +705,70 @@ int secp256k1_ec_pubkey_combine(const secp256k1_context* ctx, secp256k1_pubkey *
     return 1;
 }
 
+/* Negates the point corresponding to pubkey if it has an uneven Y coordinate */
+static void secp256k1_ec_pubkey_even_y(const secp256k1_context* ctx, secp256k1_pubkey *pubkey) {
+    secp256k1_ge ge;
+    secp256k1_pubkey_load(ctx, &ge, pubkey);
+    secp256k1_ge_even_y(&ge, NULL);
+    secp256k1_pubkey_save(pubkey, &ge);
+}
+
+static SECP256K1_INLINE int secp256k1_xonly_pubkey_load(const secp256k1_context* ctx, secp256k1_ge* ge, const secp256k1_xonly_pubkey* pubkey) {
+    return secp256k1_pubkey_load(ctx, ge, (const secp256k1_pubkey *) pubkey);
+}
+
+static SECP256K1_INLINE void secp256k1_xonly_pubkey_save(secp256k1_xonly_pubkey* pubkey, secp256k1_ge* ge) {
+    secp256k1_pubkey_save((secp256k1_pubkey *) pubkey, ge);
+}
+
+int secp256k1_xonly_pubkey_create(const secp256k1_context* ctx, secp256k1_xonly_pubkey *pubkey, const unsigned char *seckey) {
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(pubkey != NULL);
+    ARG_CHECK(seckey != NULL);
+
+    if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *) pubkey, seckey)) {
+        return 0;
+    }
+    secp256k1_ec_pubkey_even_y(ctx, (secp256k1_pubkey *) pubkey);
+    return 1;
+}
+
+int secp256k1_xonly_pubkey_parse(const secp256k1_context* ctx, secp256k1_xonly_pubkey* pubkey, const unsigned char *input32) {
+    secp256k1_ge Q;
+    secp256k1_fe x;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(pubkey != NULL);
+    memset(pubkey, 0, sizeof(*pubkey));
+    ARG_CHECK(input32 != NULL);
+
+    if (!secp256k1_fe_set_b32(&x, input32)) {
+        return 0;
+    }
+    if (!secp256k1_ge_set_xo_var(&Q, &x, 0)) {
+        return 0;
+    }
+    secp256k1_xonly_pubkey_save(pubkey, &Q);
+    secp256k1_ge_clear(&Q);
+    return 1;
+}
+
+int secp256k1_xonly_pubkey_serialize(const secp256k1_context* ctx, unsigned char *output32, const secp256k1_xonly_pubkey* pubkey) {
+    secp256k1_ge Q;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(output32 != NULL);
+    memset(output32, 0, 32);
+    ARG_CHECK(pubkey != NULL);
+
+    if (!secp256k1_xonly_pubkey_load(ctx, &Q, pubkey)) {
+        return 0;
+    }
+    secp256k1_fe_get_b32(output32, &Q.x);
+    return 1;
+}
+
 #ifdef ENABLE_MODULE_ECDH
 # include "modules/ecdh/main_impl.h"
 #endif
