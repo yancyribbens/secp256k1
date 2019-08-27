@@ -53,6 +53,10 @@ static int secp256k1_ge_set_xquad(secp256k1_ge *r, const secp256k1_fe *x);
  *  for Y. Return value indicates whether the result is valid. */
 static int secp256k1_ge_set_xo_var(secp256k1_ge *r, const secp256k1_fe *x, int odd);
 
+/** Keeps a group element as is if it has an even Y and otherwise negates it.
+ *  is_negated is set to 0 in the former case and to 1 in the latter case. */
+static void secp256k1_ge_even_y(secp256k1_ge *r, int *is_negated);
+
 /** Check whether a group element is the point at infinity. */
 static int secp256k1_ge_is_infinity(const secp256k1_ge *a);
 
