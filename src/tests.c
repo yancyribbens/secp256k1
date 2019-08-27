@@ -4268,6 +4268,92 @@ void run_eckey_edge_case_test(void) {
     secp256k1_context_set_illegal_callback(ctx, NULL, NULL);
 }
 
+void test_positive_pubkey(void) {
+    unsigned char sk[32] = { 0 };
+    unsigned char garbage[32];
+    secp256k1_pubkey signed_pk;
+    secp256k1_positive_pubkey positive_pk;
+    secp256k1_positive_pubkey positive_pk_tmp;
+    secp256k1_ge pk1;
+    secp256k1_ge pk2;
+    secp256k1_fe y;
+    unsigned char buf32[32];
+
+    /* sk = 0 should fail */
+    CHECK(secp256k1_positive_pubkey_create(ctx, &positive_pk, sk) == 0);
+
+    /* Check that X coordinate of normal pubkey and positive pubkey matches
+     * and that due to choice of secret key the Y coordinates are each others
+     * additive inverse. */
+    sk[0] = 6;
+    CHECK(secp256k1_ec_pubkey_create(ctx, &signed_pk, sk) == 1);
+    CHECK(secp256k1_positive_pubkey_create(ctx, &positive_pk, sk) == 1);
+    secp256k1_pubkey_load(ctx, &pk1, &signed_pk);
+    secp256k1_pubkey_load(ctx, &pk2, (secp256k1_pubkey *) &positive_pk);
+    CHECK(secp256k1_fe_equal(&pk1.x, &pk2.x) == 1);
+    secp256k1_fe_negate(&y, &pk2.y, 1);
+    CHECK(secp256k1_fe_equal(&pk1.y, &y) == 1);
+
+    /* Serialization and parse roundtrip */
+    CHECK(secp256k1_positive_pubkey_create(ctx, &positive_pk, sk) == 1);
+    CHECK(secp256k1_positive_pubkey_serialize(ctx, buf32, &positive_pk) == 1);
+    CHECK(secp256k1_positive_pubkey_parse(ctx, &positive_pk_tmp, buf32) == 1);
+    CHECK(memcmp(&positive_pk, &positive_pk_tmp, sizeof(positive_pk)) == 0);
+
+    /* Can't parse a byte string that's not a valid X coordinate */
+    memset(garbage, 0, sizeof(garbage));
+    CHECK(secp256k1_positive_pubkey_parse(ctx, &positive_pk_tmp, garbage) == 0);
+}
+
+void test_positive_pubkey_api(void) {
+    secp256k1_positive_pubkey pk;
+    unsigned char sk[32];
+    unsigned char buf32[32];
+
+    /** setup **/
+    secp256k1_context *none = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    secp256k1_context *sign = secp256k1_context_create(SECP256K1_CONTEXT_SIGN);
+    secp256k1_context *vrfy = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY);
+    secp256k1_context *both = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    int ecount;
+
+    secp256k1_context_set_error_callback(none, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_error_callback(sign, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_error_callback(vrfy, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_error_callback(both, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(none, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(sign, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(vrfy, counting_illegal_callback_fn, &ecount);
+    secp256k1_context_set_illegal_callback(both, counting_illegal_callback_fn, &ecount);
+
+    secp256k1_rand256(sk);
+    ecount = 0;
+    CHECK(secp256k1_positive_pubkey_create(none, &pk, sk) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_positive_pubkey_create(sign, &pk, sk) == 1);
+    CHECK(secp256k1_positive_pubkey_create(vrfy, &pk, sk) == 0);
+    CHECK(ecount == 2);
+    CHECK(secp256k1_positive_pubkey_create(sign, NULL, sk) == 0);
+    CHECK(ecount == 3);
+    CHECK(secp256k1_positive_pubkey_create(sign, &pk, NULL) == 0);
+    CHECK(ecount == 4);
+
+    ecount = 0;
+    CHECK(secp256k1_positive_pubkey_create(sign, &pk, sk) == 1);
+    CHECK(secp256k1_positive_pubkey_serialize(none, buf32, &pk) == 1);
+    CHECK(secp256k1_positive_pubkey_serialize(none, NULL, &pk) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_positive_pubkey_serialize(none, buf32, NULL) == 0);
+    CHECK(ecount == 2);
+
+    ecount = 0;
+    CHECK(secp256k1_positive_pubkey_parse(none, &pk, buf32) == 1);
+    CHECK(secp256k1_positive_pubkey_parse(none, NULL, buf32) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_positive_pubkey_parse(none, &pk, NULL) == 0);
+    CHECK(ecount == 2);
+}
+
 void random_sign(secp256k1_scalar *sigr, secp256k1_scalar *sigs, const secp256k1_scalar *key, const secp256k1_scalar *msg, int *recid) {
     secp256k1_scalar nonce;
     do {
@@ -5437,6 +5523,10 @@ int main(int argc, char **argv) {
 
     /* EC key edge cases */
     run_eckey_edge_case_test();
+
+    /* Positive key test cases */
+    test_positive_pubkey();
+    test_positive_pubkey_api();
 
 #ifdef ENABLE_MODULE_ECDH
     /* ecdh tests */

@@ -56,7 +56,6 @@ void test_schnorrsig_api(secp256k1_scratch_space *scratch) {
     CHECK(secp256k1_ec_pubkey_create(ctx, &pk[1], sk2) == 1);
     CHECK(secp256k1_ec_pubkey_create(ctx, &pk[2], sk3) == 1);
 
-    /** main test body **/
     ecount = 0;
     CHECK(secp256k1_schnorrsig_sign(none, &sig, msg, sk1, NULL, NULL) == 0);
     CHECK(ecount == 1);

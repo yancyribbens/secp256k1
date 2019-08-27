@@ -97,6 +97,7 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     /* tagged hash(r.x, pk, msg32) */
     secp256k1_schnorrsig_sha256_tagged(&sha);
     secp256k1_sha256_write(&sha, &sig->data[0], 32);
+    /* TODO: ser only 32 bytes */
     secp256k1_eckey_pubkey_serialize(&pk, buf, &buflen, 1);
     secp256k1_sha256_write(&sha, buf, buflen);
     secp256k1_sha256_write(&sha, msg32, 32);
