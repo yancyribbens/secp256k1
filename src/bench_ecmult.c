@@ -34,7 +34,8 @@ typedef struct {
     size_t count;
     int includes_g;
 
-    /* Changes per test iteration */
+    /* Changes per test iteration, used to pick different scalars and pubkeys
+     * in each run. */
     size_t offset1;
     size_t offset2;
 
@@ -42,7 +43,13 @@ typedef struct {
     secp256k1_gej* output;
 } bench_data;
 
-static int bench_callback(secp256k1_scalar* sc, secp256k1_ge* ge, size_t idx, void* arg) {
+/* Hashes x into [0, POINTS) twice and store the result in offset1 and offset2. */
+static void hash_into_offset(bench_data* data, size_t x) {
+    data->offset1 = (x * 0x537b7f6f + 0x8f66a481) % POINTS;
+    data->offset2 = (x * 0x7f6f537b + 0x6a1a8f49) % POINTS;
+}
+
+static int bench_ecmult_multi_callback(secp256k1_scalar* sc, secp256k1_ge* ge, size_t idx, void* arg) {
     bench_data* data = (bench_data*)arg;
     if (data->includes_g) ++idx;
     if (idx == 0) {
@@ -55,7 +62,7 @@ static int bench_callback(secp256k1_scalar* sc, secp256k1_ge* ge, size_t idx, vo
     return 1;
 }
 
-static void bench_ecmult(void* arg) {
+static void bench_ecmult_multi(void* arg) {
     bench_data* data = (bench_data*)arg;
 
     size_t count = data->count;
@@ -64,19 +71,18 @@ static void bench_ecmult(void* arg) {
     size_t iter;
 
     for (iter = 0; iter < iters; ++iter) {
-        data->ecmult_multi(&data->ctx->error_callback, &data->ctx->ecmult_ctx, data->scratch, &data->output[iter], data->includes_g ? &data->scalars[data->offset1] : NULL, bench_callback, arg, count - includes_g);
+        data->ecmult_multi(&data->ctx->error_callback, &data->ctx->ecmult_ctx, data->scratch, &data->output[iter], data->includes_g ? &data->scalars[data->offset1] : NULL, bench_ecmult_multi_callback, arg, count - includes_g);
         data->offset1 = (data->offset1 + count) % POINTS;
         data->offset2 = (data->offset2 + count - 1) % POINTS;
     }
 }
 
-static void bench_ecmult_setup(void* arg) {
+static void bench_ecmult_multi_setup(void* arg) {
     bench_data* data = (bench_data*)arg;
-    data->offset1 = (data->count * 0x537b7f6f + 0x8f66a481) % POINTS;
-    data->offset2 = (data->count * 0x7f6f537b + 0x6a1a8f49) % POINTS;
+    hash_into_offset(data, data->count);
 }
 
-static void bench_ecmult_teardown(void* arg) {
+static void bench_ecmult_multi_teardown(void* arg) {
     bench_data* data = (bench_data*)arg;
     size_t iters = 1 + ITERS / data->count;
     size_t iter;
@@ -86,6 +92,34 @@ static void bench_ecmult_teardown(void* arg) {
         secp256k1_gej_add_var(&tmp, &data->output[iter], &data->expected_output[iter], NULL);
         CHECK(secp256k1_gej_is_infinity(&tmp));
     }
+}
+
+static void run_ecmult_multi_test(bench_data* data, size_t count, int includes_g) {
+    char str[32];
+    static const secp256k1_scalar zero = SECP256K1_SCALAR_CONST(0, 0, 0, 0, 0, 0, 0, 0);
+    size_t iters = 1 + ITERS / count;
+    size_t iter;
+
+    data->count = count;
+    data->includes_g = includes_g;
+
+    /* Compute (the negation of) the expected results directly. */
+    hash_into_offset(data, data->count);
+    for (iter = 0; iter < iters; ++iter) {
+        secp256k1_scalar tmp;
+        secp256k1_scalar total = data->scalars[(data->offset1++) % POINTS];
+        size_t i = 0;
+        for (i = 0; i + 1 < count; ++i) {
+            secp256k1_scalar_mul(&tmp, &data->seckeys[(data->offset2++) % POINTS], &data->scalars[(data->offset1++) % POINTS]);
+            secp256k1_scalar_add(&total, &total, &tmp);
+        }
+        secp256k1_scalar_negate(&total, &total);
+        secp256k1_ecmult(&data->ctx->ecmult_ctx, &data->expected_output[iter], NULL, &zero, &total);
+    }
+
+    /* Run the benchmark. */
+    sprintf(str, includes_g ? "ecmult_multi %ig" : "ecmult_multi %i", (int)count);
+    run_benchmark(str, bench_ecmult_multi, bench_ecmult_multi_setup, bench_ecmult_multi_teardown, data, 10, count * (1 + ITERS / count));
 }
 
 static void generate_scalar(uint32_t num, secp256k1_scalar* scalar) {
@@ -102,35 +136,6 @@ static void generate_scalar(uint32_t num, secp256k1_scalar* scalar) {
     secp256k1_sha256_finalize(&sha256, buf);
     secp256k1_scalar_set_b32(scalar, buf, &overflow);
     CHECK(!overflow);
-}
-
-static void run_test(bench_data* data, size_t count, int includes_g) {
-    char str[32];
-    static const secp256k1_scalar zero = SECP256K1_SCALAR_CONST(0, 0, 0, 0, 0, 0, 0, 0);
-    size_t iters = 1 + ITERS / count;
-    size_t iter;
-
-    data->count = count;
-    data->includes_g = includes_g;
-
-    /* Compute (the negation of) the expected results directly. */
-    data->offset1 = (data->count * 0x537b7f6f + 0x8f66a481) % POINTS;
-    data->offset2 = (data->count * 0x7f6f537b + 0x6a1a8f49) % POINTS;
-    for (iter = 0; iter < iters; ++iter) {
-        secp256k1_scalar tmp;
-        secp256k1_scalar total = data->scalars[(data->offset1++) % POINTS];
-        size_t i = 0;
-        for (i = 0; i + 1 < count; ++i) {
-            secp256k1_scalar_mul(&tmp, &data->seckeys[(data->offset2++) % POINTS], &data->scalars[(data->offset1++) % POINTS]);
-            secp256k1_scalar_add(&total, &total, &tmp);
-        }
-        secp256k1_scalar_negate(&total, &total);
-        secp256k1_ecmult(&data->ctx->ecmult_ctx, &data->expected_output[iter], NULL, &zero, &total);
-    }
-
-    /* Run the benchmark. */
-    sprintf(str, includes_g ? "ecmult_%ig" : "ecmult_%i", (int)count);
-    run_benchmark(str, bench_ecmult, bench_ecmult_setup, bench_ecmult_teardown, data, 10, count * (1 + ITERS / count));
 }
 
 int main(int argc, char **argv) {
@@ -185,12 +190,12 @@ int main(int argc, char **argv) {
     free(pubkeys_gej);
 
     for (i = 1; i <= 8; ++i) {
-        run_test(&data, i, 1);
+        run_ecmult_multi_test(&data, i, 1);
     }
 
     for (p = 0; p <= 11; ++p) {
         for (i = 9; i <= 16; ++i) {
-            run_test(&data, i << p, 1);
+            run_ecmult_multi_test(&data, i << p, 1);
         }
     }
     if (data.scratch != NULL) {
