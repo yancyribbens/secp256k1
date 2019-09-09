@@ -94,7 +94,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify(
     const secp256k1_context* ctx,
     const secp256k1_schnorrsig *sig,
     const unsigned char *msg32,
-    const secp256k1_pubkey *pubkey
+    const secp256k1_positive_pubkey *pubkey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
 /** Verifies a set of Schnorr signatures.
@@ -115,7 +115,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_schnorrsig_verify_batch
     secp256k1_scratch_space *scratch,
     const secp256k1_schnorrsig *const *sig,
     const unsigned char *const *msg32,
-    const secp256k1_pubkey *const *pk,
+    const secp256k1_positive_pubkey *const *pk,
     size_t n_sigs
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2);
 
