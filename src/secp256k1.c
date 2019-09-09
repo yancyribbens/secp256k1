@@ -731,12 +731,19 @@ int secp256k1_ec_pubkey_combine(const secp256k1_context* ctx, secp256k1_pubkey *
 }
 
 /* Converts a secp256k1_pubkey into its absolute value, i.e. keeps it as is if
- * it is positive and otherwise negates it. */
-static void secp256k1_ec_pubkey_absolute(const secp256k1_context* ctx, secp256k1_pubkey *pubkey) {
-    secp256k1_ge ge;
+ * it is positive and otherwise negates it. Sign is set to 1 if the input
+ * pubkey was negative and set to 0 otherwise. */
+static void secp256k1_ec_pubkey_absolute(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, int *sign) {
+   secp256k1_ge ge;
     secp256k1_pubkey_load(ctx, &ge, pubkey);
+    if (sign != NULL) {
+        *sign = 0;
+    }
     if (!secp256k1_fe_is_quad_var(&ge.y)) {
         secp256k1_ge_neg(&ge, &ge);
+        if (sign != NULL) {
+            *sign = 1;
+        }
     }
     secp256k1_pubkey_save(pubkey, &ge);
 }
@@ -750,7 +757,7 @@ int secp256k1_positive_pubkey_create(const secp256k1_context* ctx, secp256k1_pos
     if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *) pubkey, seckey)) {
         return 0;
     }
-    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey);
+    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey, NULL);
     return 1;
 }
 
@@ -766,7 +773,7 @@ int secp256k1_positive_pubkey_parse(const secp256k1_context* ctx, secp256k1_posi
     if (!secp256k1_ec_pubkey_parse(ctx, (secp256k1_pubkey *) pubkey, buf, sizeof(buf))) {
         return 0;
     }
-    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey);
+    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey, NULL);
     return 1;
 }
 
@@ -783,6 +790,74 @@ int secp256k1_positive_pubkey_serialize(const secp256k1_context* ctx, unsigned c
     }
     memcpy(output32, &buf[1], 32);
     return 1;
+}
+
+int secp256k1_positive_pubkey_from_signed(const secp256k1_context* ctx, secp256k1_positive_pubkey *positive_pubkey, int *sign, const secp256k1_pubkey *pubkey) {
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(positive_pubkey != NULL);
+    ARG_CHECK(pubkey != NULL);
+
+    *positive_pubkey = *(secp256k1_positive_pubkey *) pubkey;
+
+    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) positive_pubkey, sign);
+    return 1;
+}
+
+int secp256k1_positive_pubkey_to_signed(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, const secp256k1_positive_pubkey *positive_pubkey, int sign) {
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(pubkey != NULL);
+    ARG_CHECK(positive_pubkey != NULL);
+
+    *pubkey = *(secp256k1_pubkey *) positive_pubkey;
+    if (sign) {
+        return secp256k1_ec_pubkey_negate(ctx, pubkey);
+    }
+    return 1;
+}
+
+int secp256k1_positive_privkey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey32, const unsigned char *tweak32) {
+    secp256k1_ge ge;
+    secp256k1_pubkey pubkey;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(seckey32 != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    if (!secp256k1_ec_pubkey_create(ctx, &pubkey, seckey32)) {
+        return 0;
+    }
+    secp256k1_pubkey_load(ctx, &ge, &pubkey);
+    if (!secp256k1_fe_is_quad_var(&ge.y)) {
+        if (!secp256k1_ec_privkey_negate(ctx, seckey32)) {
+            return 0;
+        }
+    }
+
+    return secp256k1_ec_privkey_tweak_add(ctx, seckey32, tweak32);
+}
+
+int secp256k1_positive_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_pubkey *output_pubkey, const secp256k1_positive_pubkey *internal_pubkey, const unsigned char *tweak32) {
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(internal_pubkey != NULL);
+    ARG_CHECK(output_pubkey != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    *output_pubkey = *(secp256k1_pubkey *)internal_pubkey;
+    return secp256k1_ec_pubkey_tweak_add(ctx, output_pubkey, tweak32);
+}
+
+int secp256k1_positive_pubkey_tweak_verify(const secp256k1_context* ctx, const secp256k1_pubkey *output_pubkey, const secp256k1_positive_pubkey *internal_pubkey, const unsigned char *tweak32) {
+    secp256k1_pubkey pk_expected;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(internal_pubkey != NULL);
+    ARG_CHECK(output_pubkey != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    if (!secp256k1_positive_pubkey_tweak_add(ctx, &pk_expected, internal_pubkey, tweak32)) {
+        return 0;
+    }
+    return memcmp(&pk_expected, output_pubkey, sizeof(pk_expected)) == 0;
 }
 
 #ifdef ENABLE_MODULE_ECDH
