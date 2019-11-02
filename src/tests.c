@@ -166,7 +166,7 @@ void run_context_tests(int use_prealloc) {
         sign_prealloc = malloc(secp256k1_context_preallocated_size(SECP256K1_CONTEXT_SIGN));
         vrfy_prealloc = malloc(secp256k1_context_preallocated_size(SECP256K1_CONTEXT_VERIFY));
         both_prealloc = malloc(secp256k1_context_preallocated_size(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY));
-        CHECK(none_prealloc != NULL);
+        CHECK(none_prealloc == NULL);
         CHECK(sign_prealloc != NULL);
         CHECK(vrfy_prealloc != NULL);
         CHECK(both_prealloc != NULL);
