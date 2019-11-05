@@ -70,7 +70,11 @@ matrix:
       # using MSAN_OPTIONS. This is because the default exit code is 77 - the
       # same exit code that autotools make check interprets as a test that is
       # supposed to be skipped.
-      env: EXTRAFLAGS="--disable-openssl-tests CFLAGS=-fsanitize=memory" ASM=no BIGNUM=no EXPERIMENTAL=yes ENDOMORPHISM=yes RECOVERY=yes ECDH=yes MSAN_OPTIONS=exitcode=42 VERBOSE=1
+      env:
+        - EXTRAFLAGS="--disable-openssl-tests CFLAGS=-fsanitize=memory" ASM=no
+        - BIGNUM=no EXPERIMENTAL=yes ENDOMORPHISM=yes RECOVERY=yes ECDH=yes
+        - MSAN_OPTIONS=exitcode=42
+        - VERBOSE=1
 
 before_install: mkdir -p `dirname $GUAVA_JAR`
 install: if [ ! -f $GUAVA_JAR ]; then wget $GUAVA_URL -O $GUAVA_JAR; fi
