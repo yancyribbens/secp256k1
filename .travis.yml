@@ -75,16 +75,20 @@ matrix:
     # With endomorphism
     - compiler: clang
       env:
-        - EXTRAFLAGS="--disable-openssl-tests CFLAGS=\"-fsanitize=memory -fsanitize-memory-track-origins=2\"" ASM=no
-        - BIGNUM=no EXPERIMENTAL=yes RECOVERY=yes ECDH=yes
+        - EXTRAFLAGS="--disable-openssl-tests"
+        - CFLAGS="-fsanitize=memory -fsanitize-memory-track-origins=2"
+        - ASM=no BIGNUM=no
+        - EXPERIMENTAL=yes RECOVERY=yes ECDH=yes
         - MSAN_OPTIONS=exitcode=42
         - VERBOSE=1
         - ENDOMORPHISM=yes
     # Memory sanitizer without endomorphism
     - compiler: clang
       env:
-        - EXTRAFLAGS="--disable-openssl-tests CFLAGS=\"-fsanitize=memory -fsanitize-memory-track-origins=2\"" ASM=no
-        - BIGNUM=no EXPERIMENTAL=yes RECOVERY=yes ECDH=yes
+        - EXTRAFLAGS="--disable-openssl-tests"
+        - CFLAGS="-fsanitize=memory -fsanitize-memory-track-origins=2"
+        - ASM=no BIGNUM=no
+        - EXPERIMENTAL=yes RECOVERY=yes ECDH=yes
         - MSAN_OPTIONS=exitcode=42
         - VERBOSE=1
         - ENDOMORPHISM=no
