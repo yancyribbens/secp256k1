@@ -4,7 +4,6 @@ addons:
   apt:
     packages: libgmp-dev
 compiler:
-  - clang
   - gcc
 cache:
   directories:
@@ -16,7 +15,7 @@ env:
 matrix:
   fast_finish: true
   include:
-    - compiler: clang
+    - compiler: gcc
       env:
         - DVALGRIND=1
         - CFLAGS=" -fno-omit-frame-pointer -g"
@@ -28,7 +27,7 @@ matrix:
         apt:
           packages:
             - valgrind
-    - compiler: clang
+    - compiler: gcc
       env:
         - DVALGRIND=1
         - CFLAGS="-fno-omit-frame-pointer -g"
@@ -40,7 +39,7 @@ matrix:
         apt:
           packages:
             - valgrind
-    - compiler: clang
+    - compiler: gcc
       env:
         - DVALGRIND=1
         - CFLAGS="-fno-omit-frame-pointer -g"
