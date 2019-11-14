@@ -523,6 +523,18 @@ SECP256K1_API int secp256k1_ecdsa_signature_normalize(
  */
 SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_rfc6979;
 
+/** An implementation of the nonce generation function as defined in BIP-schnorr.
+ *
+ * If a data pointer is passed, it is assumed to be a pointer to 32 bytes of
+ * extra entropy. If the data pointer is NULL and this function is used in
+ * schnorrsig_sign, it produces BIP-schnorr compliant signatures.
+ * When this function is used in ecdsa_sign, it generates a nonce using an
+ * analogue of the bip-schnorr nonce generation algorithm, but with tag
+ * "BIPSchnorrNULL" instead of "BIPSchnorrDerive".
+ * The attempt argument must be 0 or the function will fail and return 0.
+ */
+SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_bipschnorr;
+
 /** A default safe nonce generation function (currently equal to secp256k1_nonce_function_rfc6979). */
 SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_default;
 
