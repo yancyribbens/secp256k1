@@ -765,6 +765,99 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_create(
     const unsigned char *seckey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
+/** Converts a secp256k1_pubkey into a secp256k1_xonly_pubkey.
+ *
+ *  Returns: 1 if the public key was successfully converted
+ *           0 otherwise
+ *
+ *  Args:         ctx: pointer to a context object
+ *  Out: xonly_pubkey: pointer to an x-only public key object for placing the
+ *                     converted public key (cannot be NULL)
+ *      has_square_y: pointer to an integer that will be set to 1 if the pubkey
+ *                    encodes a point with a square Y coordinate, and set to 0
+ *                    otherwise. (can be NULL)
+ *  In:       pubkey: pointer to a public key that is converted (cannot be
+ *                    NULL)
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_from_pubkey(
+    const secp256k1_context* ctx,
+    secp256k1_xonly_pubkey *xonly_pubkey,
+    int *has_square_y,
+    const secp256k1_pubkey *pubkey
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4);
+
+/** Tweak the private key of an x-only pubkey by adding a tweak to it. The public
+ *  key of the resulting private key will be the same as the output of
+ *  secp256k1_xonly_pubkey_tweak_add called with the same tweak and corresponding
+ *  input public key.
+ *
+ *  If the public key corresponds to a point with square Y, tweak32 is added to
+ *  the seckey (modulo the group order). Otherwise, tweak32 is added to the
+ *  negation of the seckey (modulo the group order).
+ *
+ *  Returns: 1 if the tweak was successfully added to seckey
+ *           0 if the tweak was out of range or the resulting private key would be
+ *             invalid (only when the tweak is the complement of the private key) or
+ *             seckey is 0.
+ *
+ *  Args:      ctx: pointer to a context object, initialized for signing (cannot be NULL)
+ *  In/Out: seckey: pointer to a 32-byte private key
+ *  In:    tweak32: pointer to a 32-byte tweak
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_privkey_tweak_add(
+    const secp256k1_context* ctx,
+    unsigned char *seckey,
+    const unsigned char *tweak32
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
+
+/** Tweak an x-only public key by adding tweak times the generator to it.
+ *
+ *  Returns: 1 if tweak times the generator was successfully added to pubkey
+ *           0 if the tweak was out of range or the resulting public key would be
+ *             invalid (only when the tweak is the complement of the corresponding
+ *             private key).
+ *
+ *  Args:           ctx: pointer to a context object initialized for validation
+ *                       (cannot be NULL)
+ *  Out:  output_pubkey: pointer to a public key object (cannot be NULL)
+ *         has_square_y: pointer to an integer that will be set to 1 if the
+ *                       output_pubkey has a square Y coordinate, and set to 0
+ *                       otherwise (cannot be NULL)
+ *  In: internal_pubkey: pointer to an x-only public key object to apply the
+ *                       tweak to (cannot be NULL)
+ *              tweak32: pointer to a 32-byte tweak (cannot be NULL)
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
+    const secp256k1_context* ctx,
+    secp256k1_xonly_pubkey *output_pubkey,
+    int *has_square_y,
+    const secp256k1_xonly_pubkey *internal_pubkey,
+    const unsigned char *tweak32
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
+/** Verifies that output_pubkey and has_square_y is the result of calling
+ *  secp256k1_xonly_pubkey_tweak_add with internal_pubkey and tweak32.
+ *
+ *  Returns: 1 if output_pubkey is the result of tweaking the internal_pubkey with
+ *             tweak32
+ *           0 otherwise
+ *
+ *  Args:           ctx: pointer to a context object initialized for validation
+ *                       (cannot be NULL)
+ *  In:   output_pubkey: pointer to a public key object (cannot be NULL)
+ *         has_square_y: 1 if output_pubkey has a square Y coordinate and 0 otherwise.
+ *      internal_pubkey: pointer to an x-only public key object to apply the
+ *                       tweak to (cannot be NULL)
+ *              tweak32: pointer to a 32-byte tweak (cannot be NULL)
+ */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_verify(
+    const secp256k1_context* ctx,
+    const secp256k1_xonly_pubkey *output_pubkey,
+    int has_square_y,
+    const secp256k1_xonly_pubkey *internal_pubkey,
+    const unsigned char *tweak32
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
 #ifdef __cplusplus
 }
 #endif

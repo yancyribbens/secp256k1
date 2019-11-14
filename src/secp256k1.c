@@ -682,12 +682,19 @@ int secp256k1_ec_pubkey_combine(const secp256k1_context* ctx, secp256k1_pubkey *
 }
 
 /* Converts the point encoded by a secp256k1_pubkey into its "absolute" value,
-* i.e. keeps it as is if it is has a square Y and otherwise negates it. */
-static void secp256k1_ec_pubkey_absolute(const secp256k1_context* ctx, secp256k1_pubkey *pubkey) {
+ * i.e. keeps it as is if it is has a square Y and otherwise negates it.
+ * has_square_y is set to 1 in the former case and to 0 in the latter case. */
+static void secp256k1_ec_pubkey_absolute(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, int *has_square_y) {
     secp256k1_ge ge;
     secp256k1_pubkey_load(ctx, &ge, pubkey);
+    if (has_square_y != NULL) {
+        *has_square_y = 1;
+    }
     if (!secp256k1_fe_is_quad_var(&ge.y)) {
         secp256k1_ge_neg(&ge, &ge);
+        if (has_square_y != NULL) {
+            *has_square_y = 0;
+        }
     }
     secp256k1_pubkey_save(pubkey, &ge);
 }
@@ -701,7 +708,7 @@ int secp256k1_xonly_pubkey_create(const secp256k1_context* ctx, secp256k1_xonly_
     if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *) pubkey, seckey)) {
         return 0;
     }
-    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey);
+    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey, NULL);
     return 1;
 }
 
@@ -717,7 +724,7 @@ int secp256k1_xonly_pubkey_parse(const secp256k1_context* ctx, secp256k1_xonly_p
     if (!secp256k1_ec_pubkey_parse(ctx, (secp256k1_pubkey *) pubkey, buf, sizeof(buf))) {
         return 0;
     }
-    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey);
+    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey, NULL);
     return 1;
 }
 
@@ -734,6 +741,69 @@ int secp256k1_xonly_pubkey_serialize(const secp256k1_context* ctx, unsigned char
     }
     memcpy(output32, &buf[1], 32);
     return 1;
+}
+
+int secp256k1_xonly_pubkey_from_pubkey(const secp256k1_context* ctx, secp256k1_xonly_pubkey *xonly_pubkey, int *has_square_y, const secp256k1_pubkey *pubkey) {
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(xonly_pubkey != NULL);
+    ARG_CHECK(pubkey != NULL);
+
+    *xonly_pubkey = *(const secp256k1_xonly_pubkey *) pubkey;
+
+    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) xonly_pubkey, has_square_y);
+    return 1;
+}
+
+int secp256k1_xonly_privkey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey32, const unsigned char *tweak32) {
+    secp256k1_ge ge;
+    secp256k1_pubkey pubkey;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(seckey32 != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    if (!secp256k1_ec_pubkey_create(ctx, &pubkey, seckey32)) {
+        return 0;
+    }
+    secp256k1_pubkey_load(ctx, &ge, &pubkey);
+    if (!secp256k1_fe_is_quad_var(&ge.y)) {
+        if (!secp256k1_ec_privkey_negate(ctx, seckey32)) {
+            return 0;
+        }
+    }
+
+    return secp256k1_ec_privkey_tweak_add(ctx, seckey32, tweak32);
+}
+
+int secp256k1_xonly_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_xonly_pubkey *output_pubkey, int *has_square_y, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
+    secp256k1_pubkey pubkey_tmp;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(output_pubkey != NULL);
+    ARG_CHECK(has_square_y != NULL);
+    ARG_CHECK(internal_pubkey != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    pubkey_tmp = *(secp256k1_pubkey *)internal_pubkey;
+    if(!secp256k1_ec_pubkey_tweak_add(ctx, &pubkey_tmp, tweak32)) {
+        return 0;
+    }
+    return secp256k1_xonly_pubkey_from_pubkey(ctx, output_pubkey, has_square_y, &pubkey_tmp);
+}
+
+int secp256k1_xonly_pubkey_tweak_verify(const secp256k1_context* ctx, const secp256k1_xonly_pubkey *output_pubkey, int has_square_y, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
+    secp256k1_xonly_pubkey pk_expected;
+    int has_square_y_expected;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(internal_pubkey != NULL);
+    ARG_CHECK(output_pubkey != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    if (!secp256k1_xonly_pubkey_tweak_add(ctx, &pk_expected, &has_square_y_expected, internal_pubkey, tweak32)) {
+        return 0;
+    }
+    return memcmp(&pk_expected, output_pubkey, sizeof(pk_expected)) == 0
+            && has_square_y_expected == has_square_y;
 }
 
 #ifdef ENABLE_MODULE_ECDH
