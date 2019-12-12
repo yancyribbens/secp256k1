@@ -4284,22 +4284,31 @@ void test_xonly_pubkey(void) {
     /* sk = 0 should fail */
     CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 0);
 
-    /* Check that X coordinate of normal pubkey and x-only pubkey matches
-     * and that due to choice of secret key the Y coordinates are each others
-     * additive inverse. */
+    /* Choose a secret key such that the resulting pubkey and xonly_pubkey match. */
+    sk[0] = 3;
+    CHECK(secp256k1_ec_pubkey_create(ctx, &xy_pk, sk) == 1);
+    CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
+    CHECK(memcmp(&xonly_pk, &xy_pk, sizeof(xonly_pk)) == 0);
+    /* Test result of from_pubkey */
+    CHECK(secp256k1_xonly_pubkey_from_pubkey(ctx, &xonly_pk_tmp, &is_negated, &xy_pk) == 1);
+    CHECK(memcmp(&xonly_pk_tmp, &xonly_pk, sizeof(xonly_pk)) == 0);
+    CHECK(is_negated == 0);
+
+    /* Choose a secret key such that pubkey and xonly_pubkey are each others
+     * negation. */
     sk[0] = 6;
     CHECK(secp256k1_ec_pubkey_create(ctx, &xy_pk, sk) == 1);
     CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
+    CHECK(memcmp(&xonly_pk, &xy_pk, sizeof(xonly_pk)) != 0);
     secp256k1_pubkey_load(ctx, &pk1, &xy_pk);
     secp256k1_pubkey_load(ctx, &pk2, (secp256k1_pubkey *) &xonly_pk);
     CHECK(secp256k1_fe_equal(&pk1.x, &pk2.x) == 1);
     secp256k1_fe_negate(&y, &pk2.y, 1);
     CHECK(secp256k1_fe_equal(&pk1.y, &y) == 1);
-
-    /* Test from_pubkey */
+    /* Test result of from_pubkey */
     CHECK(secp256k1_xonly_pubkey_from_pubkey(ctx, &xonly_pk_tmp, &is_negated, &xy_pk) == 1);
     CHECK(memcmp(&xonly_pk_tmp, &xonly_pk, sizeof(xonly_pk)) == 0);
-    CHECK(is_negated == 0);
+    CHECK(is_negated == 1);
 
     /* Serialization and parse roundtrip */
     CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
