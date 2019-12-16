@@ -822,7 +822,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_privkey_tweak_add
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
-/** Tweak an x-only public key by adding tweak times the generator to it.
+/** Tweak an x-only public key (in place) by adding tweak times the generator to it.
  *
  *  Because the resulting point may have a non-square Y coordinate, it may not
  *  be representable by an x-only pubkey. Instead, `output_pubkey` will be set
@@ -834,23 +834,21 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_privkey_tweak_add
  *             invalid (only when the tweak is the complement of the corresponding
  *             private key).
  *
- *  Args:           ctx: pointer to a context object initialized for validation
- *                       (cannot be NULL)
- *  Out:  output_pubkey: pointer to a public key object (cannot be NULL)
- *           is_negated: pointer to an integer that will be set to 1 if
- *                       `output_pubkey` is the negation of the point that
- *                       resulted from adding the tweak. (cannot be NULL)
- *  In: internal_pubkey: pointer to an x-only public key object to apply the
- *                       tweak to (cannot be NULL)
- *              tweak32: pointer to a 32-byte tweak (cannot be NULL)
+ *  Args:       ctx: pointer to a context object initialized for validation
+ *                   (cannot be NULL)
+ *  In/Out:  pubkey: pointer to an x-only public key object to apply the tweak to
+ *                   (cannot be NULL)
+ *  Out: is_negated: pointer to an integer that will be set to 1 if
+ *                   `output_pubkey` is the negation of the point that resulted
+ *                   from adding the tweak. (cannot be NULL)
+ *  In:         tweak32: pointer to a 32-byte tweak (cannot be NULL)
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
     const secp256k1_context* ctx,
-    secp256k1_xonly_pubkey *output_pubkey,
+    secp256k1_xonly_pubkey *pubkey,
     int *is_negated,
-    const secp256k1_xonly_pubkey *internal_pubkey,
     const unsigned char *tweak32
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
 /** Tests that output_pubkey and is_negated are the result of calling
  *  secp256k1_xonly_pubkey_tweak_add with internal_pubkey and tweak32. Note

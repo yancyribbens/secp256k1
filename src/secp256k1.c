@@ -802,7 +802,7 @@ int secp256k1_xonly_pubkey_from_pubkey(const secp256k1_context* ctx, secp256k1_x
     ARG_CHECK(xonly_pubkey != NULL);
     ARG_CHECK(pubkey != NULL);
 
-    *xonly_pubkey = *(const secp256k1_xonly_pubkey *) pubkey;
+    memcpy(xonly_pubkey, pubkey, sizeof(*xonly_pubkey));
 
     secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) xonly_pubkey, is_negated);
     return 1;
@@ -832,19 +832,16 @@ int secp256k1_xonly_privkey_tweak_add(const secp256k1_context* ctx, unsigned cha
     return secp256k1_ec_privkey_tweak_add(ctx, seckey32, tweak32);
 }
 
-int secp256k1_xonly_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_xonly_pubkey *output_pubkey, int *is_negated, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
-    secp256k1_pubkey pubkey_tmp;
+int secp256k1_xonly_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_xonly_pubkey *pubkey, int *is_negated, const unsigned char *tweak32) {
     VERIFY_CHECK(ctx != NULL);
-    ARG_CHECK(output_pubkey != NULL);
+    ARG_CHECK(pubkey != NULL);
     ARG_CHECK(is_negated != NULL);
-    ARG_CHECK(internal_pubkey != NULL);
     ARG_CHECK(tweak32 != NULL);
 
-    pubkey_tmp = *(secp256k1_pubkey *)internal_pubkey;
-    if(!secp256k1_ec_pubkey_tweak_add(ctx, &pubkey_tmp, tweak32)) {
+    if(!secp256k1_ec_pubkey_tweak_add(ctx, (secp256k1_pubkey *) pubkey, tweak32)) {
         return 0;
     }
-    return secp256k1_xonly_pubkey_from_pubkey(ctx, output_pubkey, is_negated, &pubkey_tmp);
+    return secp256k1_xonly_pubkey_from_pubkey(ctx, pubkey, is_negated, (secp256k1_pubkey *) pubkey);
 }
 
 int secp256k1_xonly_pubkey_tweak_test(const secp256k1_context* ctx, const secp256k1_xonly_pubkey *output_pubkey, int is_negated, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
@@ -856,7 +853,8 @@ int secp256k1_xonly_pubkey_tweak_test(const secp256k1_context* ctx, const secp25
     ARG_CHECK(output_pubkey != NULL);
     ARG_CHECK(tweak32 != NULL);
 
-    if (!secp256k1_xonly_pubkey_tweak_add(ctx, &pk_expected, &is_negated_expected, internal_pubkey, tweak32)) {
+    pk_expected = *internal_pubkey;
+    if (!secp256k1_xonly_pubkey_tweak_add(ctx, &pk_expected, &is_negated_expected, tweak32)) {
         return 0;
     }
     return memcmp(&pk_expected, output_pubkey, sizeof(pk_expected)) == 0
