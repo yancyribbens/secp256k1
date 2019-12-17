@@ -4454,7 +4454,7 @@ void test_xonly_pubkey_api(void) {
 }
 
 void test_xonly_pubkey_tweak(void) {
-    unsigned char zeros[32];
+    unsigned char zeros64[64] = { 0 };
     unsigned char overflows[32];
     unsigned char sk[32];
     secp256k1_xonly_pubkey internal_pk;
@@ -4463,8 +4463,7 @@ void test_xonly_pubkey_tweak(void) {
     int is_negated;
     unsigned char tweak[32];
 
-    memset(zeros, 0, sizeof(zeros));
-    memset(overflows, 0xff, sizeof(zeros));
+    memset(overflows, 0xff, sizeof(overflows));
     secp256k1_rand256(sk);
     CHECK(secp256k1_xonly_pubkey_create(ctx, &internal_pk, sk) == 1);
 
@@ -4489,7 +4488,9 @@ void test_xonly_pubkey_tweak(void) {
     /* Overflowing tweak not allowed */
     CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, &output_pk, is_negated, &internal_pk, overflows) == 0);
     CHECK(secp256k1_xonly_privkey_tweak_add(ctx, sk, overflows) == 0);
+    CHECK(memcmp(sk, zeros64, sizeof(sk)) == 0);
     CHECK(secp256k1_xonly_pubkey_tweak_add(ctx, &output_pk, &is_negated, overflows) == 0);
+    CHECK(memcmp(&output_pk, zeros64, sizeof(output_pk)) == 0);
 }
 
 /* Starts with an initial pubkey and recursively creates N_PUBKEYS - 1
