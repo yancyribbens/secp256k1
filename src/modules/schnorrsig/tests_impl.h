@@ -714,7 +714,7 @@ void test_schnorrsig_taproot(void) {
 
     /* Key spend */
     secp256k1_rand256(msg);
-    CHECK(secp256k1_xonly_privkey_tweak_add(ctx, sk, tweak) == 1);
+    CHECK(secp256k1_xonly_seckey_tweak_add(ctx, sk, tweak) == 1);
     CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 1);
     /* Verify key spend */
     CHECK(secp256k1_xonly_pubkey_parse(ctx, &output_pk, output_pk_bytes) == 1);
