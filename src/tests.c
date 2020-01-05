@@ -2734,10 +2734,10 @@ void ecmult_const_random_mult(void) {
         0x337e4a98, 0xe82a9011, 0x0123ba37, 0xdd769c7d
     );
     /* random initial factor xn */
-    secp256k1_scalar xn = SECP256K1_SCALAR_CONST(
-        0x649d4f77, 0xc4242df7, 0x7f2079c9, 0x14530327,
-        0xa31b876a, 0xd2d8ce2a, 0x2236d5c6, 0xd7b2029b
-    );
+    secp256k1_scalar xn;/*  = SECP256K1_SCALAR_CONST( */
+    /*     0x649d4f77, 0xc4242df7, 0x7f2079c9, 0x14530327, */
+    /*     0xa31b876a, 0xd2d8ce2a, 0x2236d5c6, 0xd7b2029b */
+    /* ); */
     /* expected xn * A (from sage) */
     secp256k1_ge expected_b = SECP256K1_GE_CONST(
         0x23773684, 0x4d209dc7, 0x098a786f, 0x20d06fcd,
