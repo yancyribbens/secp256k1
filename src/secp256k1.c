@@ -808,7 +808,7 @@ int secp256k1_xonly_pubkey_from_pubkey(const secp256k1_context* ctx, secp256k1_x
     return 1;
 }
 
-int secp256k1_xonly_privkey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey32, const unsigned char *tweak32) {
+int secp256k1_xonly_seckey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey32, const unsigned char *tweak32) {
     secp256k1_ge ge;
     secp256k1_pubkey pubkey;
     secp256k1_scalar sec;
