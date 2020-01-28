@@ -453,7 +453,7 @@ void test_sha256_eq(secp256k1_sha256 *sha1, secp256k1_sha256 *sha2) {
     /* Is buffer fully consumed? */
     CHECK((sha1->bytes & 0x3F) == 0);
 
-    /* Compare the struct excluding the the buffer, because it may be
+    /* Compare the struct excluding the buffer, because it may be
      * uninitialized or already included in the state. */
     CHECK(sha1->bytes == sha2->bytes);
     CHECK(memcmp(sha1->s, sha2->s, sizeof(sha1->s)) == 0);
