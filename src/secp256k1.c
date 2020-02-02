@@ -772,7 +772,7 @@ int secp256k1_xonly_pubkey_parse(const secp256k1_context* ctx, secp256k1_xonly_p
     if (!secp256k1_fe_set_b32(&x, input32)) {
         return 0;
     }
-    if (!secp256k1_ge_set_xquad(&Q, &x)) {
+    if (!secp256k1_ge_set_xo_var(&Q, &x, 0)) {
         return 0;
     }
     secp256k1_xonly_pubkey_save(pubkey, &Q);
@@ -819,7 +819,7 @@ int secp256k1_xonly_seckey_tweak_add(const secp256k1_context* ctx, unsigned char
         return 0;
     }
     secp256k1_pubkey_load(ctx, &ge, &pubkey);
-    if (!secp256k1_fe_is_quad_var(&ge.y)) {
+    if (secp256k1_fe_is_odd(&ge.y)) {
         /* Overflow can be ignored because ec_pubkey_create would already fail */
         secp256k1_scalar_set_b32(&sec, seckey32, NULL);
         secp256k1_scalar_negate(&sec, &sec);

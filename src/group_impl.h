@@ -245,7 +245,7 @@ static void secp256k1_ge_absolute(secp256k1_ge *r, int *is_negated) {
     if (is_negated != NULL) {
         *is_negated = 0;
     }
-    if (!secp256k1_fe_is_quad_var(&r->y)) {
+    if (secp256k1_fe_is_odd(&r->y)) {
         secp256k1_ge_neg(r, r);
         if (is_negated != NULL) {
             *is_negated = 1;
