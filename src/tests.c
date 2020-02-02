@@ -4285,7 +4285,7 @@ void test_xonly_pubkey(void) {
     CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 0);
 
     /* Choose a secret key such that the resulting pubkey and xonly_pubkey match. */
-    sk[0] = 3;
+    sk[0] = 1;
     CHECK(secp256k1_ec_pubkey_create(ctx, &xy_pk, sk) == 1);
     CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
     CHECK(memcmp(&xonly_pk, &xy_pk, sizeof(xonly_pk)) == 0);
@@ -4296,7 +4296,7 @@ void test_xonly_pubkey(void) {
 
     /* Choose a secret key such that pubkey and xonly_pubkey are each others
      * negation. */
-    sk[0] = 6;
+    sk[0] = 2;
     CHECK(secp256k1_ec_pubkey_create(ctx, &xy_pk, sk) == 1);
     CHECK(secp256k1_xonly_pubkey_create(ctx, &xonly_pk, sk) == 1);
     CHECK(memcmp(&xonly_pk, &xy_pk, sizeof(xonly_pk)) != 0);
