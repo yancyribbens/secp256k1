@@ -88,7 +88,7 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     secp256k1_scalar_get_b32(seckey_tmp, &x);
     secp256k1_fe_normalize(&pk.x);
     secp256k1_fe_get_b32(pk_buf, &pk.x);
-    if (!noncefp(buf, msg32, seckey_tmp, pk_buf, (unsigned char *) "BIPSchnorrDerive", (void*)ndata, 0)) {
+    if (!noncefp(buf, msg32, seckey_tmp, pk_buf, (unsigned char *) "BIP340/nonce0000", (void*)ndata, 0)) {
         memset(sig, 0, sizeof(*sig));
         memset(seckey_tmp, 0, sizeof(seckey_tmp));
         secp256k1_scalar_clear(&x);
