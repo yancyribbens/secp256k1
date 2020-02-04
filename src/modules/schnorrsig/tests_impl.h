@@ -707,7 +707,8 @@ void test_schnorrsig_taproot(void) {
     /* Create output key */
     secp256k1_rand256(sk);
     CHECK(secp256k1_xonly_pubkey_create(ctx, &internal_pk, sk) == 1);
-    memset(tweak, 1, sizeof(tweak));
+    /* In actual taproot the tweak would be hash of internal_pk */
+    CHECK(secp256k1_xonly_pubkey_serialize(ctx, tweak, &internal_pk) == 1);
     /* Copy internal_pk because tweak_add changes the public key in place */
     output_pk = internal_pk;
     CHECK(secp256k1_xonly_pubkey_tweak_add(ctx, &output_pk, &is_negated, tweak) == 1);
