@@ -467,7 +467,8 @@ void test_sha256_eq(secp256k1_sha256 *sha1, secp256k1_sha256 *sha2) {
 }
 
 void run_nonce_function_bip340_tests(void) {
-    char tag[16] = "BIPSchnorrDerive";
+    char tag[12] = "BIP340/nonce";
+    char algo16[16] = "BIP340/nonce0000";
     secp256k1_sha256 sha;
     secp256k1_sha256 sha_optimized;
     unsigned char nonces[2][32];
@@ -493,8 +494,8 @@ void run_nonce_function_bip340_tests(void) {
     CHECK(memcmp(nonces[1], nonces[0], sizeof(nonces[1])) != 0);
 
     /* Check that counter != 0 makes nonce function fail. */
-    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) tag, NULL, 0) == 1);
-    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) tag, NULL, 1) == 0);
+    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) algo16, NULL, 0) == 1);
+    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) algo16, NULL, 1) == 0);
 }
 
 void run_hmac_sha256_tests(void) {

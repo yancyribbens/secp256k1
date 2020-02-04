@@ -414,17 +414,18 @@ static SECP256K1_INLINE void buffer_append(unsigned char *buf, unsigned int *off
 }
 
 /* Initializes SHA256 with fixed midstate. This midstate was computed by applying
- * SHA256 to SHA256("BIPSchnorrDerive")||SHA256("BIPSchnorrDerive"). */
+ * SHA256 to SHA256("BIP340/nonce")||SHA256("BIP340/nonce"). */
 static void secp256k1_nonce_function_bip340_sha256_tagged(secp256k1_sha256 *sha) {
     secp256k1_sha256_initialize(sha);
-    sha->s[0] = 0x1cd78ec3ul;
-    sha->s[1] = 0xc4425f87ul;
-    sha->s[2] = 0xb4f1a9f1ul;
-    sha->s[3] = 0xa16abd8dul;
-    sha->s[4] = 0x5a6dea72ul;
-    sha->s[5] = 0xd28469e3ul;
-    sha->s[6] = 0x17119b2eul;
-    sha->s[7] = 0x7bd19a16ul;
+    sha->s[0] = 0xa96e75cbul;
+    sha->s[1] = 0x74f9f0acul;
+    sha->s[2] = 0xc49e3c98ul;
+    sha->s[3] = 0x202f99baul;
+    sha->s[4] = 0x8946a616ul;
+    sha->s[5] = 0x4accf415ul;
+    sha->s[6] = 0x86e335c3ul;
+    sha->s[7] = 0x48d0a072ul;
+
     sha->bytes = 64;
 }
 
@@ -440,7 +441,7 @@ static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *ms
     /* Tag the hash with algo16 which is important to avoid nonce reuse across
      * algorithms. If this nonce function is used in BIP-340 signing as defined
      * in the spec, an optimized tagging implementation is used. */
-    if (memcmp(algo16, "BIPSchnorrDerive", 16) == 0) {
+    if (memcmp(algo16, "BIP340/nonce0000", 16) == 0) {
         secp256k1_nonce_function_bip340_sha256_tagged(&sha);
     } else {
         secp256k1_sha256_initialize_tagged(&sha, algo16, 16);
