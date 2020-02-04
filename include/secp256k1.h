@@ -106,6 +106,23 @@ typedef int (*secp256k1_nonce_function)(
     unsigned int attempt
 );
 
+/** Same as secp256k1_nonce function with the exception of accepting an
+ *  additional pubkey argument. This can protect signature schemes with
+ *  key-prefixed challenge hash inputs against reusing the nonce when signing
+ *  with the wrong precomputed pubkey.
+ *
+ * In:  xonly_pk32: the 32-byte serialized xonly pubkey corresponding to key32 (will not be NULL)
+ */
+typedef int (*secp256k1_nonce_function_extended)(
+    unsigned char *nonce32,
+    const unsigned char *msg32,
+    const unsigned char *key32,
+    const unsigned char *xonly_pk32,
+    const unsigned char *algo16,
+    void *data,
+    unsigned int attempt
+);
+
 # if !defined(SECP256K1_GNUC_PREREQ)
 #  if defined(__GNUC__)&&defined(__GNUC_MINOR__)
 #   define SECP256K1_GNUC_PREREQ(_maj,_min) \
@@ -531,12 +548,12 @@ SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_rfc
  * If a data pointer is passed, it is assumed to be a pointer to 32 bytes of
  * extra entropy. If the data pointer is NULL and this function is used in
  * schnorrsig_sign, it produces BIP-340 compliant signatures.
- * When this function is used in ecdsa_sign, it generates a nonce using an
- * analogue of the BIP-340 nonce generation algorithm, but with tag
- * "BIPSchnorrNULL" instead of "BIPSchnorrDerive".
+ * When this function is called with the algo16 argument pointing to NULL, it
+ * generates a nonce using an analogue of the BIP-340 nonce generation
+ * algorithm, but with tag "BIPSchnorrNULL" instead of "BIPSchnorrDerive".
  * The attempt argument must be 0 or the function will fail and return 0.
  */
-SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_bip340;
+SECP256K1_API extern const secp256k1_nonce_function_extended secp256k1_nonce_function_bip340;
 
 /** A default safe nonce generation function (currently equal to secp256k1_nonce_function_rfc6979). */
 SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_default;

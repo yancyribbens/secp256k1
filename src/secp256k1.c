@@ -428,7 +428,7 @@ static void secp256k1_nonce_function_bip340_sha256_tagged(secp256k1_sha256 *sha)
     sha->bytes = 64;
 }
 
-static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *algo16, void *data, unsigned int counter) {
+static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *xonly_pk32, const unsigned char *algo16, void *data, unsigned int counter) {
     secp256k1_sha256 sha;
 
     if (counter != 0) {
@@ -451,6 +451,7 @@ static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *ms
 
     /* Hash x||msg using the tagged hash as per the spec */
     secp256k1_sha256_write(&sha, key32, 32);
+    secp256k1_sha256_write(&sha, xonly_pk32, 32);
     secp256k1_sha256_write(&sha, msg32, 32);
     if (data != NULL) {
         secp256k1_sha256_write(&sha, data, 32);
@@ -489,7 +490,7 @@ static int nonce_function_rfc6979(unsigned char *nonce32, const unsigned char *m
    return 1;
 }
 
-const secp256k1_nonce_function secp256k1_nonce_function_bip340 = nonce_function_bip340;
+const secp256k1_nonce_function_extended secp256k1_nonce_function_bip340 = nonce_function_bip340;
 const secp256k1_nonce_function secp256k1_nonce_function_rfc6979 = nonce_function_rfc6979;
 const secp256k1_nonce_function secp256k1_nonce_function_default = nonce_function_rfc6979;
 
