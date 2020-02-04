@@ -470,7 +470,7 @@ void run_nonce_function_bip340_tests(void) {
     char tag[16] = "BIPSchnorrDerive";
     secp256k1_sha256 sha;
     secp256k1_sha256 sha_optimized;
-    unsigned char nonces[3][32];
+    unsigned char nonces[2][32];
     unsigned char msg[32];
     unsigned char key[32];
     unsigned char pk[32];
@@ -487,16 +487,14 @@ void run_nonce_function_bip340_tests(void) {
     memset(msg, 0, sizeof(msg));
     memset(key, 1, sizeof(key));
     memset(pk, 2, sizeof(pk));
+    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, NULL, NULL, 0) == 0);
     CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) "BIPSchnorrDerive", NULL, 0));
-    CHECK(nonce_function_bip340(nonces[1], msg, key, pk, NULL, NULL, 0));
+    CHECK(nonce_function_bip340(nonces[1], msg, key, pk, (unsigned char *) "something16chars", NULL, 0));
     CHECK(memcmp(nonces[1], nonces[0], sizeof(nonces[1])) != 0);
-    CHECK(nonce_function_bip340(nonces[2], msg, key, pk, (unsigned char *) "something16chars", NULL, 0));
-    CHECK(memcmp(nonces[2], nonces[0], sizeof(nonces[2])) != 0);
-    CHECK(memcmp(nonces[2], nonces[1], sizeof(nonces[2])) != 0);
 
     /* Check that counter != 0 makes nonce function fail. */
-    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, NULL, NULL, 0) == 1);
-    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, NULL, NULL, 1) == 0);
+    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) tag, NULL, 0) == 1);
+    CHECK(nonce_function_bip340(nonces[0], msg, key, pk, (unsigned char *) tag, NULL, 1) == 0);
 }
 
 void run_hmac_sha256_tests(void) {

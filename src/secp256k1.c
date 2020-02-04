@@ -434,19 +434,16 @@ static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *ms
     if (counter != 0) {
         return 0;
     }
+    if (algo16 == NULL) {
+        return 0;
+    }
     /* Tag the hash with algo16 which is important to avoid nonce reuse across
      * algorithms. If this nonce function is used in BIP-340 signing as defined
      * in the spec, an optimized tagging implementation is used. */
-    if (algo16 != NULL) {
-        if (memcmp(algo16, "BIPSchnorrDerive", 16) == 0) {
-            secp256k1_nonce_function_bip340_sha256_tagged(&sha);
-        } else {
-            secp256k1_sha256_initialize_tagged(&sha, algo16, 16);
-        }
+    if (memcmp(algo16, "BIPSchnorrDerive", 16) == 0) {
+        secp256k1_nonce_function_bip340_sha256_tagged(&sha);
     } else {
-        /* If algo16 is NULL use a 14-bytes tag to rule out collisions with any
-         * non-NULL algo16 */
-        secp256k1_sha256_initialize_tagged(&sha, (unsigned char *) "BIPSchnorrNULL", 14);
+        secp256k1_sha256_initialize_tagged(&sha, algo16, 16);
     }
 
     /* Hash x||msg using the tagged hash as per the spec */

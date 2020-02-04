@@ -547,11 +547,9 @@ SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_rfc
  *
  * If a data pointer is passed, it is assumed to be a pointer to 32 bytes of
  * extra entropy. If the data pointer is NULL and this function is used in
- * schnorrsig_sign, it produces BIP-340 compliant signatures.
- * When this function is called with the algo16 argument pointing to NULL, it
- * generates a nonce using an analogue of the BIP-340 nonce generation
- * algorithm, but with tag "BIPSchnorrNULL" instead of "BIPSchnorrDerive".
- * The attempt argument must be 0 or the function will fail and return 0.
+ * schnorrsig_sign, it produces BIP-340 compliant signatures. The algo16 must be
+ * non-NULL and the attempt argument must be 0, otherwise the function will fail
+ * and return 0.
  */
 SECP256K1_API extern const secp256k1_nonce_function_extended secp256k1_nonce_function_bip340;
 
