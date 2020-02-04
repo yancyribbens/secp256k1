@@ -44,7 +44,7 @@ static void secp256k1_schnorrsig_sha256_tagged(secp256k1_sha256 *sha) {
     sha->bytes = 64;
 }
 
-int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function noncefp, void *ndata) {
+int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function_extended noncefp, void *ndata) {
     secp256k1_scalar x;
     secp256k1_scalar e;
     secp256k1_scalar k;
@@ -55,6 +55,7 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     secp256k1_sha256 sha;
     int overflow;
     unsigned char buf[32];
+    unsigned char pk_buf[32];
     unsigned char seckey_tmp[32];
 
     VERIFY_CHECK(ctx != NULL);
@@ -85,7 +86,9 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     }
 
     secp256k1_scalar_get_b32(seckey_tmp, &x);
-    if (!noncefp(buf, msg32, seckey_tmp, (unsigned char *) "BIPSchnorrDerive", (void*)ndata, 0)) {
+    secp256k1_fe_normalize(&pk.x);
+    secp256k1_fe_get_b32(pk_buf, &pk.x);
+    if (!noncefp(buf, msg32, seckey_tmp, pk_buf, (unsigned char *) "BIPSchnorrDerive", (void*)ndata, 0)) {
         memset(sig, 0, sizeof(*sig));
         memset(seckey_tmp, 0, sizeof(seckey_tmp));
         secp256k1_scalar_clear(&x);
@@ -112,9 +115,7 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     /* tagged hash(r.x, pk.x, msg32) */
     secp256k1_schnorrsig_sha256_tagged(&sha);
     secp256k1_sha256_write(&sha, &sig->data[0], 32);
-    secp256k1_fe_normalize(&pk.x);
-    secp256k1_fe_get_b32(buf, &pk.x);
-    secp256k1_sha256_write(&sha, buf, sizeof(buf));
+    secp256k1_sha256_write(&sha, pk_buf, sizeof(pk_buf));
     secp256k1_sha256_write(&sha, msg32, 32);
     secp256k1_sha256_finalize(&sha, buf);
 

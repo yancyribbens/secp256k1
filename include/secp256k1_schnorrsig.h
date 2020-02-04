@@ -77,7 +77,7 @@ SECP256K1_API int secp256k1_schnorrsig_sign(
     secp256k1_schnorrsig *sig,
     const unsigned char *msg32,
     const unsigned char *seckey,
-    secp256k1_nonce_function noncefp,
+    secp256k1_nonce_function_extended noncefp,
     void *ndata
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
