@@ -137,7 +137,7 @@ void test_schnorrsig_api(secp256k1_scratch_space *scratch) {
 /* Checks that hash initialized by secp256k1_musig_sha256_tagged has the
  * expected state. */
 void test_schnorrsig_sha256_tagged(void) {
-    char tag[10] = "BIPSchnorr";
+    char tag[16] = "BIP340/challenge";
     secp256k1_sha256 sha;
     secp256k1_sha256 sha_optimized;
 

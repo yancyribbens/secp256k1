@@ -30,17 +30,17 @@ int secp256k1_schnorrsig_parse(const secp256k1_context* ctx, secp256k1_schnorrsi
 }
 
 /* Initializes SHA256 with fixed midstate. This midstate was computed by applying
- * SHA256 to SHA256("BIPSchnorr")||SHA256("BIPSchnorr"). */
+ * SHA256 to SHA256("BIP340/challenge")||SHA256("BIP340/challenge"). */
 static void secp256k1_schnorrsig_sha256_tagged(secp256k1_sha256 *sha) {
     secp256k1_sha256_initialize(sha);
-    sha->s[0] = 0x048d9a59ul;
-    sha->s[1] = 0xfe39fb05ul;
-    sha->s[2] = 0x28479648ul;
-    sha->s[3] = 0xe4a660f9ul;
-    sha->s[4] = 0x814b9e66ul;
-    sha->s[5] = 0x0469e801ul;
-    sha->s[6] = 0x83909280ul;
-    sha->s[7] = 0xb329e454ul;
+    sha->s[0] = 0x71985ac9ul;
+    sha->s[1] = 0x198317a2ul;
+    sha->s[2] = 0x60b6e581ul;
+    sha->s[3] = 0x54c109b6ul;
+    sha->s[4] = 0x64bac2fdul;
+    sha->s[5] = 0x91231de2ul;
+    sha->s[6] = 0x7301ebdeul;
+    sha->s[7] = 0x87635f83ul;
     sha->bytes = 64;
 }
 
