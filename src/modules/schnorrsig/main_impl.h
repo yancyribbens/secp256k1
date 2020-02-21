@@ -119,6 +119,8 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     secp256k1_sha256_write(&sha, msg32, 32);
     secp256k1_sha256_finalize(&sha, buf);
 
+    /* Set scalar e to the challenge hash modulo the curve order as per
+     * BIP340. */
     secp256k1_scalar_set_b32(&e, buf, NULL);
     secp256k1_scalar_mul(&e, &e, &x);
     secp256k1_scalar_add(&e, &e, &k);
