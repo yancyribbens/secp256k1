@@ -468,6 +468,7 @@ void test_sha256_eq(secp256k1_sha256 *sha1, secp256k1_sha256 *sha2) {
 
 void run_nonce_function_bip340_tests(void) {
     char tag[12] = "BIP340/nonce";
+    char aux_tag[10] = "BIP340/aux";
     char algo16[16] = "BIP340/nonce0000";
     secp256k1_sha256 sha;
     secp256k1_sha256 sha_optimized;
@@ -481,6 +482,13 @@ void run_nonce_function_bip340_tests(void) {
      * state. */
     secp256k1_sha256_initialize_tagged(&sha, (unsigned char *) tag, sizeof(tag));
     secp256k1_nonce_function_bip340_sha256_tagged(&sha_optimized);
+    test_sha256_eq(&sha, &sha_optimized);
+
+   /* Check that hash initialized by
+    * secp256k1_nonce_function_bip340_sha256_tagged_aux has the expected
+    * state. */
+    secp256k1_sha256_initialize_tagged(&sha, (unsigned char *) aux_tag, sizeof(aux_tag));
+    secp256k1_nonce_function_bip340_sha256_tagged_aux(&sha_optimized);
     test_sha256_eq(&sha, &sha_optimized);
 
     /* Check that different choices of the algo16 argument result in different
