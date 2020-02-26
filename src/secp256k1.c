@@ -447,6 +447,8 @@ static void secp256k1_nonce_function_bip340_sha256_tagged_aux(secp256k1_sha256 *
 
 static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *msg32, const unsigned char *key32, const unsigned char *xonly_pk32, const unsigned char *algo16, void *data, unsigned int counter) {
     secp256k1_sha256 sha;
+    unsigned char masked_key[32];
+    int i;
 
     if (counter != 0) {
         return 0;
@@ -454,6 +456,16 @@ static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *ms
     if (algo16 == NULL) {
         return 0;
     }
+
+    if (data != NULL) {
+        secp256k1_nonce_function_bip340_sha256_tagged_aux(&sha);
+        secp256k1_sha256_write(&sha, data, 32);
+        secp256k1_sha256_finalize(&sha, masked_key);
+        for (i = 0; i < 32; i++) {
+            masked_key[i] ^= key32[i];
+        }
+    }
+
     /* Tag the hash with algo16 which is important to avoid nonce reuse across
      * algorithms. If this nonce function is used in BIP-340 signing as defined
      * in the spec, an optimized tagging implementation is used. */
@@ -463,13 +475,14 @@ static int nonce_function_bip340(unsigned char *nonce32, const unsigned char *ms
         secp256k1_sha256_initialize_tagged(&sha, algo16, 16);
     }
 
-    /* Hash x||msg using the tagged hash as per the spec */
-    secp256k1_sha256_write(&sha, key32, 32);
+    /* Hash (masked-)key||pk||msg using the tagged hash as per the spec */
+    if (data != NULL) {
+        secp256k1_sha256_write(&sha, masked_key, 32);
+    } else {
+        secp256k1_sha256_write(&sha, key32, 32);
+    }
     secp256k1_sha256_write(&sha, xonly_pk32, 32);
     secp256k1_sha256_write(&sha, msg32, 32);
-    if (data != NULL) {
-        secp256k1_sha256_write(&sha, data, 32);
-    }
     secp256k1_sha256_finalize(&sha, nonce32);
     return 1;
 }

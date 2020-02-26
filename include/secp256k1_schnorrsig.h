@@ -64,13 +64,24 @@ SECP256K1_API int secp256k1_schnorrsig_parse(
 
 /** Create a Schnorr signature.
  *
+ *  Does _not_ strictly follow BIP-340 because it does not verify the resulting
+ *  signature. Instead, you can manually use secp256k1_schnorrsig_verify and
+ *  abort if it fails.
+ *
+ *  Otherwise BIP-340 compliant if the noncefp argument is NULL or
+ *  secp256k1_nonce_function_bip340 and the ndata argument is 32-byte auxiliary
+ *  randomness.
+ *
  * Returns 1 on success, 0 on failure.
  *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
  *  Out:     sig: pointer to the returned signature (cannot be NULL)
  *  In:    msg32: the 32-byte message being signed (cannot be NULL)
  *        seckey: pointer to a 32-byte secret key (cannot be NULL)
  *       noncefp: pointer to a nonce generation function. If NULL, secp256k1_nonce_function_bip340 is used
- *         ndata: pointer to arbitrary data used by the nonce generation function (can be NULL)
+ *         ndata: pointer to arbitrary data used by the nonce generation
+ *                function (can be NULL). If it is non-NULL and
+ *                secp256k1_nonce_function_bip340 is used, then ndata must be a
+ *                pointer to 32-byte auxiliary randomness as per BIP-340.
  */
 SECP256K1_API int secp256k1_schnorrsig_sign(
     const secp256k1_context* ctx,

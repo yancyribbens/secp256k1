@@ -546,13 +546,13 @@ SECP256K1_API extern const secp256k1_nonce_function secp256k1_nonce_function_rfc
  *  (https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki).
  *
  * If a data pointer is passed, it is assumed to be a pointer to 32 bytes of
- * extra entropy. If the data pointer is NULL and this function is used in
- * schnorrsig_sign, it produces BIP-340 compliant signatures. The algo16 must be
- * non-NULL and the attempt argument must be 0, otherwise the function will fail
- * and return 0. The hash will be tagged with the algo16 argument, except if it
- * is "BIP340/nonce0000" in which case the tag is "BIP340/nonce" (and the
- * midstate is precomputed). This is used to create BIP 340 compliant
- * signatures.
+ * auxiliary random data as defined in BIP-340. If the data pointer is NULL,
+ * schnorrsig_sign does not produce BIP-340 compliant signatures. The algo16
+ * argument must be non-NULL and the attempt argument must be 0, otherwise the
+ * function will fail and return 0. The hash will be tagged with the algo16
+ * argument, except if it is "BIP340/nonce0000" in which case the tag is
+ * "BIP340/nonce" (and the midstate is precomputed). This is used to create BIP
+ * 340 compliant signatures.
  */
 SECP256K1_API extern const secp256k1_nonce_function_extended secp256k1_nonce_function_bip340;
 
