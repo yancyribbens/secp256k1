@@ -756,13 +756,13 @@ int secp256k1_ec_pubkey_combine(const secp256k1_context* ctx, secp256k1_pubkey *
     return 1;
 }
 
-/* Converts the point encoded by a secp256k1_pubkey into its "absolute" value.
- * That means it is kept as is if it has a square Y and otherwise negated.
- * is_negated is set to 1 in the former case and to 0 in the latter case. */
-static void secp256k1_ec_pubkey_absolute(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, int *is_negated) {
+/* Makes the point point encoded by a secp256k1_pubkey have an even Y coordinate
+ * by negating the point if necessary. If the Y coordinate was already even,
+ * is_negated is set to 0, otherwise it's set to 1. */
+static void secp256k1_ec_pubkey_even_y(const secp256k1_context* ctx, secp256k1_pubkey *pubkey, int *is_negated) {
     secp256k1_ge ge;
     secp256k1_pubkey_load(ctx, &ge, pubkey);
-    secp256k1_ge_absolute(&ge, is_negated);
+    secp256k1_ge_even_y(&ge, is_negated);
     secp256k1_pubkey_save(pubkey, &ge);
 }
 
@@ -784,7 +784,7 @@ int secp256k1_xonly_pubkey_create(const secp256k1_context* ctx, secp256k1_xonly_
     if (!secp256k1_ec_pubkey_create(ctx, (secp256k1_pubkey *) pubkey, seckey)) {
         return 0;
     }
-    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) pubkey, NULL);
+    secp256k1_ec_pubkey_even_y(ctx, (secp256k1_pubkey *) pubkey, NULL);
     return 1;
 }
 
@@ -830,7 +830,7 @@ int secp256k1_xonly_pubkey_from_pubkey(const secp256k1_context* ctx, secp256k1_x
 
     memcpy(xonly_pubkey, pubkey, sizeof(*xonly_pubkey));
 
-    secp256k1_ec_pubkey_absolute(ctx, (secp256k1_pubkey *) xonly_pubkey, is_negated);
+    secp256k1_ec_pubkey_even_y(ctx, (secp256k1_pubkey *) xonly_pubkey, is_negated);
     return 1;
 }
 

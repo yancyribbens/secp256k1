@@ -79,7 +79,7 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
 
     /* Because we are signing for a x-only pubkey, the secret key is negated
      * before signing if the point corresponding to the secret key does not
-     * have a square Y. */
+     * have an even Y. */
     secp256k1_fe_normalize(&pk.y);
     if (secp256k1_fe_is_odd(&pk.y)) {
         secp256k1_scalar_negate(&x, &x);
