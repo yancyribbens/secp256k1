@@ -870,20 +870,24 @@ int secp256k1_xonly_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_xon
     return secp256k1_xonly_pubkey_from_pubkey(ctx, pubkey, is_negated, (secp256k1_pubkey *) pubkey);
 }
 
-int secp256k1_xonly_pubkey_tweak_test(const secp256k1_context* ctx, const secp256k1_xonly_pubkey *output_pubkey, int is_negated, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
+int secp256k1_xonly_pubkey_tweak_test(const secp256k1_context* ctx, const unsigned char *output_pubkey32, int is_negated, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
     secp256k1_xonly_pubkey pk_expected;
+    unsigned char pk_expected32[32];
     int is_negated_expected;
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
     ARG_CHECK(internal_pubkey != NULL);
-    ARG_CHECK(output_pubkey != NULL);
+    ARG_CHECK(output_pubkey32 != NULL);
     ARG_CHECK(tweak32 != NULL);
 
     pk_expected = *internal_pubkey;
     if (!secp256k1_xonly_pubkey_tweak_add(ctx, &pk_expected, &is_negated_expected, tweak32)) {
         return 0;
     }
-    return memcmp(&pk_expected, output_pubkey, sizeof(pk_expected)) == 0
+    /* xonly_pubkey_serialize must succeed if xonly_pubkey_tweak_add above
+     * succeeded. */
+    VERIFY_CHECK(secp256k1_xonly_pubkey_serialize(ctx, pk_expected32, &pk_expected) == 1);
+    return memcmp(&pk_expected32, output_pubkey32, 32) == 0
             && is_negated_expected == is_negated;
 }
 

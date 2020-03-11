@@ -871,7 +871,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
 
-/** Tests that output_pubkey and is_negated are the result of calling
+/** Tests that output_pubkey32 and is_negated are the result of calling
  *  secp256k1_xonly_pubkey_tweak_add with internal_pubkey and tweak32. Note
  *  that this alone does _not_ verify that output_pubkey is a commitment. If the
  *  tweak is not chosen in a specific way, the output_pubkey can easily be the
@@ -883,7 +883,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
  *
  *  Args:           ctx: pointer to a context object initialized for validation
  *                       (cannot be NULL)
- *  In:   output_pubkey: pointer to a public key object (cannot be NULL)
+ *  In: output_pubkey32: pointer to a serialized xonly public key (cannot be NULL)
  *           is_negated: 1 if `output_pubkey is the negation of the point that
  *                       resulted from adding the tweak and 0 otherwise.
  *      internal_pubkey: pointer to an x-only public key object to apply the
@@ -892,7 +892,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_test(
     const secp256k1_context* ctx,
-    const secp256k1_xonly_pubkey *output_pubkey,
+    const unsigned char *output_pubkey32,
     int is_negated,
     const secp256k1_xonly_pubkey *internal_pubkey,
     const unsigned char *tweak32
