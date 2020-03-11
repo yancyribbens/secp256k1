@@ -749,9 +749,8 @@ void test_schnorrsig_taproot(void) {
     /* Script spend */
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, internal_pk_bytes, &internal_pk) == 1);
     /* Verify script spend */
-    CHECK(secp256k1_xonly_pubkey_parse(ctx, &output_pk, output_pk_bytes) == 1);
     CHECK(secp256k1_xonly_pubkey_parse(ctx, &internal_pk, internal_pk_bytes) == 1);
-    CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, &output_pk, is_negated, &internal_pk, tweak) == 1);
+    CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk_bytes, is_negated, &internal_pk, tweak) == 1);
 }
 
 void run_schnorrsig_tests(void) {
