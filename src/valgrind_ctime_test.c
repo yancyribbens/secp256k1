@@ -12,6 +12,11 @@
 # include "include/secp256k1_ecdh.h"
 #endif
 
+
+#if ENABLE_MODULE_SCHNORRSIG
+#include "include/secp256k1_schnorrsig.h"
+#endif
+
 int main(void) {
     secp256k1_context* ctx;
     secp256k1_ecdsa_signature signature;
@@ -24,6 +29,9 @@ int main(void) {
     unsigned char key[32];
     unsigned char sig[74];
     unsigned char spubkey[33];
+#if ENABLE_MODULE_SCHNORRSIG
+    secp256k1_schnorrsig schnorrsig;
+#endif
 
     if (!RUNNING_ON_VALGRIND) {
         fprintf(stderr, "This test can only usefully be run inside valgrind.\n");
@@ -63,6 +71,13 @@ int main(void) {
     /* Test ECDH. */
     VALGRIND_MAKE_MEM_UNDEFINED(key, 32);
     ret = secp256k1_ecdh(ctx, msg, &pubkey, key, NULL, NULL);
+    VALGRIND_MAKE_MEM_DEFINED(&ret, sizeof(ret));
+    CHECK(ret == 1);
+#endif
+
+#if ENABLE_MODULE_SCHNORRSIG
+    VALGRIND_MAKE_MEM_UNDEFINED(key, 32);
+    ret = secp256k1_schnorrsig_sign(ctx, &schnorrsig, msg, key, NULL, NULL);
     VALGRIND_MAKE_MEM_DEFINED(&ret, sizeof(ret));
     CHECK(ret == 1);
 #endif
