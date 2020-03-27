@@ -26,6 +26,7 @@ void test_schnorrsig_api(secp256k1_scratch_space *scratch) {
     unsigned char sk3[32];
     unsigned char msg[32];
     unsigned char sig64[64];
+    secp256k1_keypair keypairs[3];
     secp256k1_xonly_pubkey pk[3];
     secp256k1_xonly_pubkey zero_pk;
     secp256k1_schnorrsig sig;
@@ -54,22 +55,25 @@ void test_schnorrsig_api(secp256k1_scratch_space *scratch) {
     secp256k1_rand256(sk2);
     secp256k1_rand256(sk3);
     secp256k1_rand256(msg);
-    CHECK(secp256k1_xonly_pubkey_create(ctx, &pk[0], sk1) == 1);
-    CHECK(secp256k1_xonly_pubkey_create(ctx, &pk[1], sk2) == 1);
-    CHECK(secp256k1_xonly_pubkey_create(ctx, &pk[2], sk3) == 1);
+    CHECK(secp256k1_keypair_create(ctx, &keypairs[0], sk1) == 1);
+    CHECK(secp256k1_keypair_create(ctx, &keypairs[1], sk2) == 1);
+    CHECK(secp256k1_keypair_create(ctx, &keypairs[2], sk3) == 1);
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &pk[0], NULL, &keypairs[0]) == 1);
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &pk[1], NULL, &keypairs[1]) == 1);
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &pk[2], NULL, &keypairs[2]) == 1);
     memset(&zero_pk, 0, sizeof(zero_pk));
 
     /** main test body **/
     ecount = 0;
-    CHECK(secp256k1_schnorrsig_sign(none, &sig, msg, sk1, NULL, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(none, &sig, msg, &keypairs[0], NULL, NULL) == 0);
     CHECK(ecount == 1);
-    CHECK(secp256k1_schnorrsig_sign(vrfy, &sig, msg, sk1, NULL, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(vrfy, &sig, msg, &keypairs[0], NULL, NULL) == 0);
     CHECK(ecount == 2);
-    CHECK(secp256k1_schnorrsig_sign(sign, &sig, msg, sk1, NULL, NULL) == 1);
+    CHECK(secp256k1_schnorrsig_sign(sign, &sig, msg, &keypairs[0], NULL, NULL) == 1);
     CHECK(ecount == 2);
-    CHECK(secp256k1_schnorrsig_sign(sign, NULL, msg, sk1, NULL, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(sign, NULL, msg, &keypairs[0], NULL, NULL) == 0);
     CHECK(ecount == 3);
-    CHECK(secp256k1_schnorrsig_sign(sign, &sig, NULL, sk1, NULL, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(sign, &sig, NULL, &keypairs[0], NULL, NULL) == 0);
     CHECK(ecount == 4);
     CHECK(secp256k1_schnorrsig_sign(sign, &sig, msg, NULL, NULL, NULL) == 0);
     CHECK(ecount == 5);
@@ -151,13 +155,17 @@ void test_schnorrsig_sha256_tagged(void) {
 void test_schnorrsig_bip_vectors_check_signing(const unsigned char *sk, const unsigned char *pk_serialized, unsigned char *aux_rand, const unsigned char *msg, const unsigned char *expected_sig) {
     secp256k1_schnorrsig sig;
     unsigned char serialized_sig[64];
-    secp256k1_xonly_pubkey pk;
+    secp256k1_keypair keypair;
+    secp256k1_xonly_pubkey pk, pk_expected;
 
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, aux_rand));
+    CHECK(secp256k1_keypair_create(ctx, &keypair, sk));
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, &keypair, NULL, aux_rand));
     CHECK(secp256k1_schnorrsig_serialize(ctx, serialized_sig, &sig));
     CHECK(memcmp(serialized_sig, expected_sig, 64) == 0);
 
-    CHECK(secp256k1_xonly_pubkey_parse(ctx, &pk, pk_serialized));
+    CHECK(secp256k1_xonly_pubkey_parse(ctx, &pk_expected, pk_serialized));
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &pk, NULL, &keypair));
+    CHECK(memcmp(&pk, &pk_expected, sizeof(pk)) == 0);
     CHECK(secp256k1_schnorrsig_verify(ctx, &sig, msg, &pk));
 }
 
@@ -640,34 +648,23 @@ static int nonce_function_overflowing(unsigned char *nonce32, const unsigned cha
 
 void test_schnorrsig_sign(void) {
     unsigned char sk[32];
+    secp256k1_keypair keypair;
     const unsigned char msg[32] = "this is a msg for a schnorrsig..";
     secp256k1_schnorrsig sig;
-    unsigned char zeros64[64];
-
-
-    memset(sk, 23, sizeof(sk));
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 1);
-
-    memset(zeros64, 0, 64);
-    /* Overflowing secret key */
-    memset(sk, 0xFF, sizeof(sk));
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 0);
-    CHECK(memcmp(&sig, zeros64, sizeof(sig)) == 0);
-
-    /* Zeroed secret key */
-    memset(sk, 0, sizeof(sk));
-    memset(&sig, 1, sizeof(sig));
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 0);
-    CHECK(memcmp(&sig, zeros64, sizeof(sig)) == 0);
+    unsigned char zeros64[64] = { 0 };
 
     memset(sk, 23, sizeof(sk));
+    CHECK(secp256k1_keypair_create(ctx, &keypair, sk));
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, &keypair, NULL, NULL) == 1);
+
+    /* Test different nonce functions */
     memset(&sig, 1, sizeof(sig));
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, nonce_function_failing, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, &keypair, nonce_function_failing, NULL) == 0);
     CHECK(memcmp(&sig, zeros64, sizeof(sig)) == 0);
     memset(&sig, 1, sizeof(sig));
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, nonce_function_0, NULL) == 0);
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, &keypair, nonce_function_0, NULL) == 0);
     CHECK(memcmp(&sig, zeros64, sizeof(sig)) == 0);
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, nonce_function_overflowing, NULL) == 1);
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, &keypair, nonce_function_overflowing, NULL) == 1);
     CHECK(memcmp(&sig, zeros64, sizeof(sig)) != 0);
 }
 
@@ -682,15 +679,17 @@ void test_schnorrsig_sign_verify(secp256k1_scratch_space *scratch) {
     const secp256k1_schnorrsig *sig_arr[N_SIGS];
     const unsigned char *msg_arr[N_SIGS];
     const secp256k1_xonly_pubkey *pk_arr[N_SIGS];
+    secp256k1_keypair keypair;
     secp256k1_xonly_pubkey pk;
 
-    CHECK(secp256k1_xonly_pubkey_create(ctx, &pk, sk));
+    CHECK(secp256k1_keypair_create(ctx, &keypair, sk));
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &pk, NULL, &keypair));
 
     CHECK(secp256k1_schnorrsig_verify_batch(ctx, scratch, NULL, NULL, NULL, 0));
 
     for (i = 0; i < N_SIGS; i++) {
         secp256k1_rand256(msg[i]);
-        CHECK(secp256k1_schnorrsig_sign(ctx, &sig[i], msg[i], sk, NULL, NULL));
+        CHECK(secp256k1_schnorrsig_sign(ctx, &sig[i], msg[i], &keypair, NULL, NULL));
         CHECK(secp256k1_schnorrsig_verify(ctx, &sig[i], msg[i], &pk));
         sig_arr[i] = &sig[i];
         msg_arr[i] = msg[i];
@@ -734,6 +733,7 @@ void test_schnorrsig_sign_verify(secp256k1_scratch_space *scratch) {
 
 void test_schnorrsig_taproot(void) {
     unsigned char sk[32];
+    secp256k1_keypair keypair;
     secp256k1_xonly_pubkey internal_pk;
     unsigned char internal_pk_bytes[32];
     secp256k1_xonly_pubkey output_pk;
@@ -745,18 +745,19 @@ void test_schnorrsig_taproot(void) {
 
     /* Create output key */
     secp256k1_rand256(sk);
-    CHECK(secp256k1_xonly_pubkey_create(ctx, &internal_pk, sk) == 1);
+    CHECK(secp256k1_keypair_create(ctx, &keypair, sk) == 1);
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &internal_pk, NULL, &keypair) == 1);
     /* In actual taproot the tweak would be hash of internal_pk */
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, tweak, &internal_pk) == 1);
     /* Copy internal_pk because tweak_add changes the public key in place */
     output_pk = internal_pk;
-    CHECK(secp256k1_xonly_pubkey_tweak_add(ctx, &output_pk, &is_negated, tweak) == 1);
+    CHECK(secp256k1_keypair_xonly_tweak_add(ctx, &keypair, tweak) == 1);
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &output_pk, &is_negated, &keypair) == 1);
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, output_pk_bytes, &output_pk) == 1);
 
     /* Key spend */
     secp256k1_rand256(msg);
-    CHECK(secp256k1_xonly_seckey_tweak_add(ctx, sk, tweak) == 1);
-    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, sk, NULL, NULL) == 1);
+    CHECK(secp256k1_schnorrsig_sign(ctx, &sig, msg, &keypair, NULL, NULL) == 1);
     /* Verify key spend */
     CHECK(secp256k1_xonly_pubkey_parse(ctx, &output_pk, output_pk_bytes) == 1);
     CHECK(secp256k1_schnorrsig_verify(ctx, &sig, msg, &output_pk) == 1);

@@ -76,7 +76,7 @@ SECP256K1_API int secp256k1_schnorrsig_parse(
  *  Args:    ctx: pointer to a context object, initialized for signing (cannot be NULL)
  *  Out:     sig: pointer to the returned signature (cannot be NULL)
  *  In:    msg32: the 32-byte message being signed (cannot be NULL)
- *        seckey: pointer to a 32-byte secret key (cannot be NULL)
+ *        TODO: seckey: pointer to a 32-byte secret key (cannot be NULL)
  *       noncefp: pointer to a nonce generation function. If NULL, secp256k1_nonce_function_bip340 is used
  *         ndata: pointer to arbitrary data used by the nonce generation
  *                function (can be NULL). If it is non-NULL and
@@ -87,7 +87,7 @@ SECP256K1_API int secp256k1_schnorrsig_sign(
     const secp256k1_context* ctx,
     secp256k1_schnorrsig *sig,
     const unsigned char *msg32,
-    const unsigned char *seckey,
+    const secp256k1_keypair *keypair,
     secp256k1_nonce_function_extended noncefp,
     void *ndata
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);

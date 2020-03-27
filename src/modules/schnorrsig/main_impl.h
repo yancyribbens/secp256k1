@@ -44,53 +44,43 @@ static void secp256k1_schnorrsig_sha256_tagged(secp256k1_sha256 *sha) {
     sha->bytes = 64;
 }
 
-int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const unsigned char *seckey, secp256k1_nonce_function_extended noncefp, void *ndata) {
+int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const secp256k1_keypair *keypair, secp256k1_nonce_function_extended noncefp, void *ndata) {
     secp256k1_scalar x;
     secp256k1_scalar e;
     secp256k1_scalar k;
-    secp256k1_gej pkj;
     secp256k1_gej rj;
     secp256k1_ge pk;
     secp256k1_ge r;
     secp256k1_sha256 sha;
-    int overflow;
     unsigned char buf[32];
     unsigned char pk_buf[32];
-    unsigned char seckey_tmp[32];
+    unsigned char seckey[32];
     int ret = 1;
 
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
     ARG_CHECK(sig != NULL);
     ARG_CHECK(msg32 != NULL);
-    ARG_CHECK(seckey != NULL);
+    ARG_CHECK(keypair != NULL);
 
     if (noncefp == NULL) {
         noncefp = secp256k1_nonce_function_bip340;
     }
-    secp256k1_scalar_set_b32(&x, seckey, &overflow);
-    ret &= !(overflow | secp256k1_scalar_is_zero(&x));
-    secp256k1_scalar_cmov(&x, &secp256k1_scalar_one, !ret);
 
-    secp256k1_ecmult_gen(&ctx->ecmult_gen_ctx, &pkj, &x);
-    secp256k1_ge_set_gej(&pk, &pkj);
-
+    ret &= secp256k1_keypair_load(ctx, &x, &pk, keypair);
     /* Because we are signing for a x-only pubkey, the secret key is negated
      * before signing if the point corresponding to the secret key does not
      * have an even Y. */
-    /* We declassify pk to allow using it as a branch point. This is fine
-     * because pk is not a secret. */
-    secp256k1_declassify(ctx, &pk, sizeof(pk));
     secp256k1_fe_normalize(&pk.y);
     if (secp256k1_fe_is_odd(&pk.y)) {
         secp256k1_scalar_negate(&x, &x);
     }
 
-    secp256k1_scalar_get_b32(seckey_tmp, &x);
+    secp256k1_scalar_get_b32(seckey, &x);
     secp256k1_fe_normalize(&pk.x);
     secp256k1_fe_get_b32(pk_buf, &pk.x);
-    ret &= !!noncefp(buf, msg32, seckey_tmp, pk_buf, (unsigned char *) "BIP340/nonce0000", (void*)ndata, 0);
-    memset(seckey_tmp, 0, sizeof(seckey_tmp));
+    ret &= !!noncefp(buf, msg32, seckey, pk_buf, (unsigned char *) "BIP340/nonce0000", (void*)ndata, 0);
+    memset(seckey, 0, sizeof(seckey));
     secp256k1_scalar_set_b32(&k, buf, NULL);
     ret &= !secp256k1_scalar_is_zero(&k);
     secp256k1_scalar_cmov(&k, &secp256k1_scalar_one, !ret);
