@@ -768,7 +768,6 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_parse(
     const unsigned char *input32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
-
 /** Serialize an xonly_pubkey object into a 32-byte sequence.
  *
  *  Returns: 1 always.
@@ -782,22 +781,6 @@ SECP256K1_API int secp256k1_xonly_pubkey_serialize(
     const secp256k1_context* ctx,
     unsigned char *output32,
     const secp256k1_xonly_pubkey* pubkey
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
-
-/** Compute the xonly public key for a secret key. Same as ec_pubkey_create, but
- *  for xonly public keys.
- *
- *  Returns: 1 if secret was valid, public key stores
- *           0 if secret was invalid, try again
- *
- *  Args:   ctx: pointer to a context object, initialized for signing (cannot be NULL)
- *  Out: pubkey: pointer to the created xonly public key (cannot be NULL)
- *  In:  seckey: pointer to a 32-byte private key (cannot be NULL)
- */
-SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_create(
-    const secp256k1_context* ctx,
-    secp256k1_xonly_pubkey *pubkey,
-    const unsigned char *seckey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
 /** Converts a secp256k1_pubkey into a secp256k1_xonly_pubkey.
@@ -868,10 +851,10 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_seckey_tweak_add(
  */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
     const secp256k1_context* ctx,
-    secp256k1_xonly_pubkey *pubkey,
-    int *is_negated,
+    secp256k1_pubkey *output_pubkey,
+    const secp256k1_xonly_pubkey *internal_pubkey,
     const unsigned char *tweak32
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3) SECP256K1_ARG_NONNULL(4);
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
 /** Tests that output_pubkey32 and is_negated are the result of calling
  *  secp256k1_xonly_pubkey_tweak_add with internal_pubkey and tweak32. Note
