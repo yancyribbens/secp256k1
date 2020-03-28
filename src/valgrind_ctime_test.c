@@ -21,6 +21,7 @@ int main(void) {
     secp256k1_context* ctx;
     secp256k1_ecdsa_signature signature;
     secp256k1_pubkey pubkey;
+    secp256k1_keypair keypair;
     size_t siglen = 74;
     size_t outputlen = 33;
     int i;
@@ -58,6 +59,12 @@ int main(void) {
     VALGRIND_MAKE_MEM_DEFINED(&ret, sizeof(ret));
     CHECK(ret);
     CHECK(secp256k1_ec_pubkey_serialize(ctx, spubkey, &outputlen, &pubkey, SECP256K1_EC_COMPRESSED) == 1);
+
+    /* Test keypair. */
+    VALGRIND_MAKE_MEM_UNDEFINED(key, 32);
+    ret = secp256k1_keypair_create(ctx, &keypair, key);
+    VALGRIND_MAKE_MEM_DEFINED(&ret, sizeof(ret));
+    CHECK(ret);
 
     /* Test signing. */
     VALGRIND_MAKE_MEM_UNDEFINED(key, 32);

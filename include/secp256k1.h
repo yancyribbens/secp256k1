@@ -752,6 +752,11 @@ typedef struct {
     unsigned char data[64];
 } secp256k1_xonly_pubkey;
 
+/* TODO: doc */
+typedef struct {
+    unsigned char data[96];
+} secp256k1_keypair;
+
 /** Parse a 32-byte public key into a xonly_pubkey object.
  *
  *  Returns: 1 if the public key was fully valid.
@@ -882,6 +887,28 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_test
     const secp256k1_xonly_pubkey *internal_pubkey,
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
+
+/* TODO: doc */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_keypair_create(
+    const secp256k1_context* ctx,
+    secp256k1_keypair *keypair,
+    const unsigned char *seckey
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
+
+/* TODO: doc */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_keypair_pub(
+    const secp256k1_context* ctx,
+    secp256k1_pubkey *pubkey,
+    const secp256k1_keypair *keypair
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
+
+/* TODO: doc */
+SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_keypair_pub_xonly(
+    const secp256k1_context* ctx,
+    secp256k1_xonly_pubkey *pubkey,
+    int *y_parity,
+    const secp256k1_keypair *keypair
+) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4);
 
 #ifdef __cplusplus
 }

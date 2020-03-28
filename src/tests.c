@@ -4306,6 +4306,59 @@ void run_eckey_edge_case_test(void) {
     secp256k1_context_set_illegal_callback(ctx, NULL, NULL);
 }
 
+static secp256k1_context* api_test_context(int flags, int *ecount) {
+    secp256k1_context *ctx0 = secp256k1_context_create(flags);
+    secp256k1_context_set_error_callback(ctx0, counting_illegal_callback_fn, ecount);
+    secp256k1_context_set_illegal_callback(ctx0, counting_illegal_callback_fn, ecount);
+    return ctx0;
+}
+
+void test_keypair(void) {
+    unsigned char sk[32];
+    unsigned char zeros96[96] = { 0 };
+    unsigned char overflows[32];
+    secp256k1_keypair keypair;
+    secp256k1_pubkey pubkey;
+    int ecount;
+    secp256k1_context *none = api_test_context(SECP256K1_CONTEXT_NONE, &ecount);
+    secp256k1_context *sign = api_test_context(SECP256K1_CONTEXT_SIGN, &ecount);
+    secp256k1_context *verify = api_test_context(SECP256K1_CONTEXT_VERIFY, &ecount);
+
+    CHECK(sizeof(zeros96) == sizeof(keypair));
+
+    /** API tests **/
+    ecount = 0;
+    secp256k1_rand256(sk);
+    CHECK(secp256k1_keypair_create(none, &keypair, sk) == 0);
+    CHECK(memcmp(zeros96, &keypair, sizeof(keypair)) == 0);
+    CHECK(ecount == 1);
+    CHECK(secp256k1_keypair_create(verify, &keypair, sk) == 0);
+    CHECK(memcmp(zeros96, &keypair, sizeof(keypair)) == 0);
+    CHECK(ecount == 2);
+    CHECK(secp256k1_keypair_create(sign, &keypair, sk) == 1);
+    CHECK(secp256k1_keypair_create(sign, NULL, sk) == 0);
+    CHECK(ecount == 3);
+    CHECK(secp256k1_keypair_create(sign, &keypair, NULL) == 0);
+    CHECK(memcmp(zeros96, &keypair, sizeof(keypair)) == 0);
+    CHECK(ecount == 4);
+
+    /* pubkey_create has same result as pubkey_create */
+    CHECK(secp256k1_keypair_create(sign, &keypair, sk) == 1);
+    CHECK(secp256k1_ec_pubkey_create(sign, &pubkey, sk) == 1);
+    CHECK(memcmp(&pubkey, &keypair.data[32], sizeof(pubkey)) == 0);
+
+    /* Invalid secret key */
+    CHECK(secp256k1_keypair_create(sign, &keypair, zeros96) == 0);
+    CHECK(memcmp(zeros96, &keypair, sizeof(keypair)) == 0);
+    memset(overflows, 0xFF, sizeof(overflows));
+    CHECK(secp256k1_keypair_create(sign, &keypair, overflows) == 0);
+    CHECK(memcmp(zeros96, &keypair, sizeof(keypair)) == 0);
+
+    secp256k1_context_destroy(none);
+    secp256k1_context_destroy(sign);
+    secp256k1_context_destroy(verify);
+}
+
 void test_xonly_pubkey(void) {
     unsigned char sk[32] = { 0 };
     unsigned char ones32[32];
@@ -4349,6 +4402,7 @@ void test_xonly_pubkey(void) {
     CHECK(secp256k1_xonly_pubkey_parse(ctx, &xonly_pk_tmp, ones32) == 0);
     CHECK(memcmp(&xonly_pk_tmp, zeros64, sizeof(xonly_pk_tmp)) == 0);
 }
+
 
 void test_xonly_pubkey_api(void) {
     secp256k1_pubkey pk;
@@ -5736,6 +5790,9 @@ int main(int argc, char **argv) {
     test_xonly_pubkey_api();
     test_xonly_pubkey_tweak();
     test_xonly_pubkey_tweak_recursive();
+
+    /* keypair tests */
+    test_keypair();
 
 #ifdef ENABLE_MODULE_ECDH
     /* ecdh tests */
