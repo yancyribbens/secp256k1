@@ -982,6 +982,37 @@ int secp256k1_keypair_pub_xonly(const secp256k1_context* ctx, secp256k1_xonly_pu
     return 1;
 }
 
+int secp256k1_keypair_xonly_tweak_add(const secp256k1_context* ctx, secp256k1_keypair *keypair, const unsigned char *tweak32) {
+    secp256k1_ge p;
+    secp256k1_scalar sec;
+    int ret;
+
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
+    ARG_CHECK(keypair != NULL);
+    ARG_CHECK(tweak32 != NULL);
+
+    ret = secp256k1_keypair_load(ctx, &sec, &p, keypair);
+    memset(keypair, 0, sizeof(*keypair));
+
+    if (secp256k1_fe_is_odd(&p.y)) {
+        secp256k1_scalar_negate(&sec, &sec);
+        secp256k1_ge_neg(&p, &p);
+    }
+
+    ret &= secp256k1_ec_privkey_tweak_add_helper(&sec, tweak32);
+    ret &= secp256k1_ec_pubkey_tweak_add_helper(&ctx->ecmult_ctx, &p, tweak32);
+
+    secp256k1_declassify(ctx, &ret, sizeof(ret));
+    if (ret) {
+        secp256k1_keypair_save(keypair, &sec, &p);
+    }
+
+    secp256k1_scalar_clear(&sec);
+    return ret;
+}
+
 #ifdef ENABLE_MODULE_ECDH
 # include "modules/ecdh/main_impl.h"
 #endif

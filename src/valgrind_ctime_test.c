@@ -50,7 +50,9 @@ int main(void) {
         msg[i] = i + 1;
     }
 
-    ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_DECLASSIFY);
+    ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN
+                                   | SECP256K1_CONTEXT_VERIFY
+                                   | SECP256K1_CONTEXT_DECLASSIFY);
 
     /* Test keygen. */
     VALGRIND_MAKE_MEM_UNDEFINED(key, 32);
@@ -108,6 +110,14 @@ int main(void) {
     VALGRIND_MAKE_MEM_UNDEFINED(key, 32);
     VALGRIND_MAKE_MEM_UNDEFINED(msg, 32);
     ret = secp256k1_ec_privkey_tweak_mul(ctx, key, msg);
+    VALGRIND_MAKE_MEM_DEFINED(&ret, sizeof(ret));
+    CHECK(ret == 1);
+
+    VALGRIND_MAKE_MEM_UNDEFINED(key, 32);
+    /* The tweak is not treated as a secret in keypair_tweak_add */
+    VALGRIND_MAKE_MEM_DEFINED(msg, 32);
+    ret = secp256k1_keypair_create(ctx, &keypair, key);
+    ret &= secp256k1_keypair_xonly_tweak_add(ctx, &keypair, msg);
     VALGRIND_MAKE_MEM_DEFINED(&ret, sizeof(ret));
     CHECK(ret == 1);
 
