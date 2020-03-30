@@ -870,37 +870,44 @@ int secp256k1_xonly_seckey_tweak_add(const secp256k1_context* ctx, unsigned char
 }
 
 int secp256k1_xonly_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_pubkey *output_pubkey, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
+    secp256k1_ge p;
+    int ret = 0;
+
     VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
     ARG_CHECK(output_pubkey != NULL);
     ARG_CHECK(internal_pubkey != NULL);
     ARG_CHECK(tweak32 != NULL);
 
-    *output_pubkey = *(const secp256k1_pubkey *)internal_pubkey;
-    return secp256k1_ec_pubkey_tweak_add(ctx, output_pubkey, tweak32);
+    memset(output_pubkey, 0, sizeof(*output_pubkey));
+    if (secp256k1_xonly_pubkey_load(ctx, &p, internal_pubkey)
+        & secp256k1_ec_pubkey_tweak_add_helper(&ctx->ecmult_ctx, &p, tweak32)) {
+        secp256k1_pubkey_save(output_pubkey, &p);
+        ret = 1;
+    }
+    return ret;
 }
 
 int secp256k1_xonly_pubkey_tweak_test(const secp256k1_context* ctx, const unsigned char *output_pubkey32, int is_negated, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
-    secp256k1_pubkey pk_expected;
-    secp256k1_xonly_pubkey pk_expected_xonly;
+    secp256k1_ge p;
     unsigned char pk_expected32[32];
-    int is_negated_expected;
+
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(secp256k1_ecmult_context_is_built(&ctx->ecmult_ctx));
     ARG_CHECK(internal_pubkey != NULL);
     ARG_CHECK(output_pubkey32 != NULL);
     ARG_CHECK(tweak32 != NULL);
 
-    if (!secp256k1_xonly_pubkey_tweak_add(ctx, &pk_expected, internal_pubkey, tweak32)) {
+    if (!secp256k1_xonly_pubkey_load(ctx, &p, internal_pubkey)
+        || !secp256k1_ec_pubkey_tweak_add_helper(&ctx->ecmult_ctx, &p, tweak32)) {
         return 0;
     }
+    secp256k1_fe_normalize_var(&p.x);
+    secp256k1_fe_normalize_var(&p.y);
+    secp256k1_fe_get_b32(pk_expected32, &p.x);
 
-    /* TODO: doc */
-    VERIFY_CHECK(secp256k1_xonly_pubkey_from_pubkey(ctx, &pk_expected_xonly, &is_negated_expected, &pk_expected));
-    /* xonly_pubkey_serialize must succeed if xonly_pubkey_tweak_add above
-     * succeeded. */
-    VERIFY_CHECK(secp256k1_xonly_pubkey_serialize(ctx, pk_expected32, &pk_expected_xonly) == 1);
     return memcmp(&pk_expected32, output_pubkey32, 32) == 0
-            && is_negated_expected == is_negated;
+            && secp256k1_fe_is_odd(&p.y) == is_negated;
 }
 
 static void secp256k1_keypair_save(secp256k1_keypair* keypair, const secp256k1_scalar* seckey, secp256k1_ge* ge) {
