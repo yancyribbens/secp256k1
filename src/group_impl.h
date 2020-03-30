@@ -241,14 +241,14 @@ static int secp256k1_ge_set_xo_var(secp256k1_ge *r, const secp256k1_fe *x, int o
 
 }
 
-static void secp256k1_ge_even_y(secp256k1_ge *r, int *is_negated) {
-    if (is_negated != NULL) {
-        *is_negated = 0;
+static void secp256k1_ge_even_y(secp256k1_ge *r, int *y_parity) {
+    if (y_parity != NULL) {
+        *y_parity = 0;
     }
     if (secp256k1_fe_is_odd(&r->y)) {
         secp256k1_ge_neg(r, r);
-        if (is_negated != NULL) {
-            *is_negated = 1;
+        if (y_parity != NULL) {
+            *y_parity = 1;
         }
     }
 }

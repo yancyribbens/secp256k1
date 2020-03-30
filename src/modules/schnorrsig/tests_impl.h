@@ -739,7 +739,7 @@ void test_schnorrsig_taproot(void) {
     secp256k1_xonly_pubkey output_pk;
     unsigned char output_pk_bytes[32];
     unsigned char tweak[32];
-    int is_negated;
+    int pubkey_parity;
     unsigned char msg[32];
     secp256k1_schnorrsig sig;
 
@@ -749,10 +749,8 @@ void test_schnorrsig_taproot(void) {
     CHECK(secp256k1_keypair_pub_xonly(ctx, &internal_pk, NULL, &keypair) == 1);
     /* In actual taproot the tweak would be hash of internal_pk */
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, tweak, &internal_pk) == 1);
-    /* Copy internal_pk because tweak_add changes the public key in place */
-    output_pk = internal_pk;
     CHECK(secp256k1_keypair_xonly_tweak_add(ctx, &keypair, tweak) == 1);
-    CHECK(secp256k1_keypair_pub_xonly(ctx, &output_pk, &is_negated, &keypair) == 1);
+    CHECK(secp256k1_keypair_pub_xonly(ctx, &output_pk, &pubkey_parity, &keypair) == 1);
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, output_pk_bytes, &output_pk) == 1);
 
     /* Key spend */
@@ -766,7 +764,7 @@ void test_schnorrsig_taproot(void) {
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, internal_pk_bytes, &internal_pk) == 1);
     /* Verify script spend */
     CHECK(secp256k1_xonly_pubkey_parse(ctx, &internal_pk, internal_pk_bytes) == 1);
-    CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk_bytes, is_negated, &internal_pk, tweak) == 1);
+    CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk_bytes, pubkey_parity, &internal_pk, tweak) == 1);
 }
 
 void run_schnorrsig_tests(void) {

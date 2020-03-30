@@ -11,7 +11,7 @@
 #include "include/secp256k1_schnorrsig.h"
 #include "hash.h"
 
-int secp256k1_schnorrsig_serialize(const secp256k1_context* ctx, unsigned char *out64, const secp256k1_schnorrsig* sig) {
+int secp256k1_schnorrsig_serialize(const secp256k1_context* ctx, unsigned char *out64, const secp256k1_schnorrsig *sig) {
     (void) ctx;
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(out64 != NULL);
@@ -20,7 +20,7 @@ int secp256k1_schnorrsig_serialize(const secp256k1_context* ctx, unsigned char *
     return 1;
 }
 
-int secp256k1_schnorrsig_parse(const secp256k1_context* ctx, secp256k1_schnorrsig* sig, const unsigned char *in64) {
+int secp256k1_schnorrsig_parse(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *in64) {
     (void) ctx;
     VERIFY_CHECK(ctx != NULL);
     ARG_CHECK(sig != NULL);
@@ -45,7 +45,7 @@ static void secp256k1_schnorrsig_sha256_tagged(secp256k1_sha256 *sha) {
 }
 
 int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig *sig, const unsigned char *msg32, const secp256k1_keypair *keypair, secp256k1_nonce_function_extended noncefp, void *ndata) {
-    secp256k1_scalar x;
+    secp256k1_scalar sk;
     secp256k1_scalar e;
     secp256k1_scalar k;
     secp256k1_gej rj;
@@ -67,16 +67,16 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
         noncefp = secp256k1_nonce_function_bip340;
     }
 
-    ret &= secp256k1_keypair_load(ctx, &x, &pk, keypair);
+    ret &= secp256k1_keypair_load(ctx, &sk, &pk, keypair);
     /* Because we are signing for a x-only pubkey, the secret key is negated
      * before signing if the point corresponding to the secret key does not
      * have an even Y. */
     secp256k1_fe_normalize(&pk.y);
     if (secp256k1_fe_is_odd(&pk.y)) {
-        secp256k1_scalar_negate(&x, &x);
+        secp256k1_scalar_negate(&sk, &sk);
     }
 
-    secp256k1_scalar_get_b32(seckey, &x);
+    secp256k1_scalar_get_b32(seckey, &sk);
     secp256k1_fe_normalize(&pk.x);
     secp256k1_fe_get_b32(pk_buf, &pk.x);
     ret &= !!noncefp(buf, msg32, seckey, pk_buf, (unsigned char *) "BIP340/nonce0000", (void*)ndata, 0);
@@ -107,13 +107,13 @@ int secp256k1_schnorrsig_sign(const secp256k1_context* ctx, secp256k1_schnorrsig
     /* Set scalar e to the challenge hash modulo the curve order as per
      * BIP340. */
     secp256k1_scalar_set_b32(&e, buf, NULL);
-    secp256k1_scalar_mul(&e, &e, &x);
+    secp256k1_scalar_mul(&e, &e, &sk);
     secp256k1_scalar_add(&e, &e, &k);
     secp256k1_scalar_get_b32(&sig->data[32], &e);
 
     memczero(sig->data, sizeof(sig->data), !ret);
     secp256k1_scalar_clear(&k);
-    secp256k1_scalar_clear(&x);
+    secp256k1_scalar_clear(&sk);
 
     return ret;
 }

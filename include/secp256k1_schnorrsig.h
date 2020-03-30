@@ -37,7 +37,7 @@ typedef struct {
 SECP256K1_API int secp256k1_schnorrsig_serialize(
     const secp256k1_context* ctx,
     unsigned char *out64,
-    const secp256k1_schnorrsig* sig
+    const secp256k1_schnorrsig *sig
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
 /** Parse a Schnorr signature.
@@ -58,7 +58,7 @@ SECP256K1_API int secp256k1_schnorrsig_serialize(
  */
 SECP256K1_API int secp256k1_schnorrsig_parse(
     const secp256k1_context* ctx,
-    secp256k1_schnorrsig* sig,
+    secp256k1_schnorrsig *sig,
     const unsigned char *in64
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 

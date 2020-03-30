@@ -796,7 +796,7 @@ SECP256K1_API int secp256k1_xonly_pubkey_serialize(
  *  Args:         ctx: pointer to a context object
  *  Out: xonly_pubkey: pointer to an x-only public key object for placing the
  *                     converted public key (cannot be NULL)
- *         is_negated: pointer to an integer that will be set to 1 if the point
+ *xonly_pubkey_parity: pointer to an integer that will be set to 1 if the point
  *                     encoded by `xonly_pubkey` is the negation of `pubkey`
  *                     and set to 0 otherwise. (can be NULL)
  *  In:       pubkey: pointer to a public key that is converted (cannot be
@@ -805,7 +805,7 @@ SECP256K1_API int secp256k1_xonly_pubkey_serialize(
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_from_pubkey(
     const secp256k1_context* ctx,
     secp256k1_xonly_pubkey *xonly_pubkey,
-    int *is_negated,
+    int *xonly_pubkey_parity,
     const secp256k1_pubkey *pubkey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4);
 
@@ -813,7 +813,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_from_pubke
  *
  *  Because the resulting point may have a non-even Y coordinate, it may not
  *  be representable by an x-only pubkey. Instead, `output_pubkey` will be set
- *  to the negation of that point. Therefore this function outputs `is_negated`
+ *  to the negation of that point. Therefore this function outputs `y_parity`
  *  which is required for `xonly_pubkey_tweak_test`.
  *
  *  Returns: 1 if tweak times the generator was successfully added to pubkey
@@ -825,7 +825,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_from_pubke
  *                   (cannot be NULL)
  *  In/Out:  pubkey: pointer to an x-only public key object to apply the tweak to
  *                   (cannot be NULL)
- *  Out: is_negated: pointer to an integer that will be set to 1 if
+ *  Out:   y_parity: pointer to an integer that will be set to 1 if
  *                   `output_pubkey` is the negation of the point that resulted
  *                   from adding the tweak. (cannot be NULL)
  *  In:         tweak32: pointer to a 32-byte tweak (cannot be NULL)
@@ -837,7 +837,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
 
-/** Tests that output_pubkey32 and is_negated are the result of calling
+/** Tests that output_pubkey32 and y_parity are the result of calling
  *  secp256k1_xonly_pubkey_tweak_add with internal_pubkey and tweak32. Note
  *  that this alone does _not_ verify that output_pubkey is a commitment. If the
  *  tweak is not chosen in a specific way, the output_pubkey can easily be the
@@ -850,7 +850,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
  *  Args:           ctx: pointer to a context object initialized for validation
  *                       (cannot be NULL)
  *  In: output_pubkey32: pointer to a serialized xonly public key (cannot be NULL)
- *           is_negated: 1 if `output_pubkey is the negation of the point that
+ * output_pubkey_parity: 1 if `output_pubkey is the negation of the point that
  *                       resulted from adding the tweak and 0 otherwise.
  *      internal_pubkey: pointer to an x-only public key object to apply the
  *                       tweak to (cannot be NULL)
@@ -859,7 +859,7 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_add(
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_tweak_test(
     const secp256k1_context* ctx,
     const unsigned char *output_pubkey32,
-    int is_negated,
+    int output_pubkey_parity,
     const secp256k1_xonly_pubkey *internal_pubkey,
     const unsigned char *tweak32
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4) SECP256K1_ARG_NONNULL(5);
@@ -882,10 +882,11 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_keypair_pub(
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_keypair_pub_xonly(
     const secp256k1_context* ctx,
     secp256k1_xonly_pubkey *pubkey,
-    int *y_parity,
+    int *pubkey_parity,
     const secp256k1_keypair *keypair
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4);
 
+/* TODO: doc */
 SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_keypair_xonly_tweak_add(
     const secp256k1_context* ctx,
     secp256k1_keypair *keypair,
