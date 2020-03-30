@@ -666,27 +666,32 @@ int secp256k1_ec_pubkey_negate(const secp256k1_context* ctx, secp256k1_pubkey *p
     return ret;
 }
 
-int secp256k1_ec_privkey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey, const unsigned char *tweak) {
+int secp256k1_ec_privkey_tweak_add_helper(secp256k1_scalar *sec, const unsigned char *tweak) {
     secp256k1_scalar term;
-    secp256k1_scalar sec;
-    int ret = 0;
     int overflow = 0;
-    VERIFY_CHECK(ctx != NULL);
-    ARG_CHECK(seckey != NULL);
-    ARG_CHECK(tweak != NULL);
+    int ret = 0;
 
     secp256k1_scalar_set_b32(&term, tweak, &overflow);
-    secp256k1_scalar_set_b32(&sec, seckey, NULL);
-
-    ret = (!overflow) & secp256k1_eckey_privkey_tweak_add(&sec, &term);
-    secp256k1_scalar_cmov(&sec, &secp256k1_scalar_zero, !ret);
-    secp256k1_scalar_get_b32(seckey, &sec);
-
-    secp256k1_scalar_clear(&sec);
+    ret = (!overflow) & secp256k1_eckey_privkey_tweak_add(sec, &term);
+    secp256k1_scalar_cmov(sec, &secp256k1_scalar_zero, !ret);
     secp256k1_scalar_clear(&term);
     return ret;
 }
 
+int secp256k1_ec_privkey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey, const unsigned char *tweak) {
+    secp256k1_scalar sec;
+    int ret = 0;
+    VERIFY_CHECK(ctx != NULL);
+    ARG_CHECK(seckey != NULL);
+    ARG_CHECK(tweak != NULL);
+
+    secp256k1_scalar_set_b32(&sec, seckey, NULL);
+    ret = secp256k1_ec_privkey_tweak_add_helper(&sec, tweak);
+    secp256k1_scalar_get_b32(seckey, &sec);
+
+    secp256k1_scalar_clear(&sec);
+    return ret;
+}
 
 int secp256k1_ec_pubkey_tweak_add_helper(const secp256k1_ecmult_context* ecmult_ctx, secp256k1_ge *p, const unsigned char *tweak) {
     secp256k1_scalar term;
