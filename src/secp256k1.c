@@ -850,30 +850,6 @@ int secp256k1_xonly_pubkey_from_pubkey(const secp256k1_context* ctx, secp256k1_x
     return 1;
 }
 
-int secp256k1_xonly_seckey_tweak_add(const secp256k1_context* ctx, unsigned char *seckey32, const unsigned char *tweak32) {
-    secp256k1_ge ge;
-    secp256k1_pubkey pubkey;
-    secp256k1_scalar sec;
-    VERIFY_CHECK(ctx != NULL);
-    ARG_CHECK(secp256k1_ecmult_gen_context_is_built(&ctx->ecmult_gen_ctx));
-    ARG_CHECK(seckey32 != NULL);
-    ARG_CHECK(tweak32 != NULL);
-
-    if (!secp256k1_ec_pubkey_create(ctx, &pubkey, seckey32)) {
-        return 0;
-    }
-    secp256k1_pubkey_load(ctx, &ge, &pubkey);
-    if (secp256k1_fe_is_odd(&ge.y)) {
-        /* Overflow can be ignored because ec_pubkey_create would already fail */
-        secp256k1_scalar_set_b32(&sec, seckey32, NULL);
-        secp256k1_scalar_negate(&sec, &sec);
-        secp256k1_scalar_get_b32(seckey32, &sec);
-        secp256k1_scalar_clear(&sec);
-    }
-
-    return secp256k1_ec_privkey_tweak_add(ctx, seckey32, tweak32);
-}
-
 int secp256k1_xonly_pubkey_tweak_add(const secp256k1_context* ctx, secp256k1_pubkey *output_pubkey, const secp256k1_xonly_pubkey *internal_pubkey, const unsigned char *tweak32) {
     secp256k1_ge p;
     int ret = 0;

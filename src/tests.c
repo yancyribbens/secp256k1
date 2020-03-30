@@ -4524,17 +4524,6 @@ void test_xonly_pubkey_api(void) {
     CHECK(secp256k1_xonly_pubkey_parse(none, &xonly_pk, buf32) == 1);
 
     ecount = 0;
-    CHECK(secp256k1_xonly_seckey_tweak_add(none, sk, tweak) == 0);
-    CHECK(ecount == 1);
-    CHECK(secp256k1_xonly_seckey_tweak_add(sign, sk, tweak) == 1);
-    CHECK(secp256k1_xonly_seckey_tweak_add(vrfy, sk, tweak) == 0);
-    CHECK(ecount == 2);
-    CHECK(secp256k1_xonly_seckey_tweak_add(sign, NULL, tweak) == 0);
-    CHECK(ecount == 3);
-    CHECK(secp256k1_xonly_seckey_tweak_add(sign, sk, NULL) == 0);
-    CHECK(ecount == 4);
-
-    ecount = 0;
     CHECK(secp256k1_xonly_pubkey_tweak_add(none, &pk, &xonly_pk, tweak) == 0);
     CHECK(ecount == 1);
     CHECK(secp256k1_xonly_pubkey_tweak_add(sign, &pk, &xonly_pk, tweak) == 0);
@@ -4605,26 +4594,14 @@ void test_xonly_pubkey_tweak(void) {
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, output_pk32, &output_pk_xonly) == 1);
     CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk32, is_negated, &internal_pk_xonly, tweak) == 1);
 
-    /* Using privkey_tweak_add gives the same result */
-    CHECK(secp256k1_xonly_seckey_tweak_add(ctx, sk, tweak) == 1);
-    CHECK(secp256k1_ec_pubkey_create(ctx, &output_pk, sk) == 1);
-    CHECK(secp256k1_xonly_pubkey_from_pubkey(ctx, &output_pk_xonly, &is_negated, &output_pk) == 1);
-    CHECK(secp256k1_xonly_pubkey_serialize(ctx, output_pk32, &output_pk_xonly) == 1);
-    CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk32, is_negated, &internal_pk_xonly, tweak) == 1);
-
     /* Wrong is_negated */
     CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk32, !is_negated, &internal_pk_xonly, tweak) == 0);
     /* Wrong public key */
     CHECK(secp256k1_xonly_pubkey_serialize(ctx, buf32, &internal_pk_xonly) == 1);
     CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, buf32, is_negated, &internal_pk_xonly, tweak) == 0);
 
-    /* Overflowing secret key not allowed */
-    CHECK(secp256k1_xonly_seckey_tweak_add(ctx, overflows, tweak) == 0);
-
     /* Overflowing tweak not allowed */
     CHECK(secp256k1_xonly_pubkey_tweak_test(ctx, output_pk32, is_negated, &internal_pk_xonly, overflows) == 0);
-    CHECK(secp256k1_xonly_seckey_tweak_add(ctx, sk, overflows) == 0);
-    CHECK(memcmp(sk, zeros64, sizeof(sk)) == 0);
     CHECK(secp256k1_xonly_pubkey_tweak_add(ctx, &output_pk, &internal_pk_xonly, overflows) == 0);
     CHECK(memcmp(&output_pk, zeros64, sizeof(output_pk)) == 0);
 }

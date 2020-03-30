@@ -809,30 +809,6 @@ SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_pubkey_from_pubke
     const secp256k1_pubkey *pubkey
 ) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(4);
 
-/** Tweak the secret key of an x-only pubkey by adding a tweak to it. The public
- *  key of the resulting secret key will be the same as the output of
- *  secp256k1_xonly_pubkey_tweak_add called with the same tweak and corresponding
- *  input public key.
- *
- *  If the public key corresponds to a point with even Y, tweak32 is added to
- *  the seckey (modulo the group order). Otherwise, tweak32 is added to the
- *  negation of the seckey (modulo the group order).
- *
- *  Returns: 1 if the tweak was successfully added to seckey
- *           0 if the tweak was out of range or the resulting secret key would be
- *             invalid (only when the tweak is the complement of the secret key) or
- *             seckey is 0.
- *
- *  Args:      ctx: pointer to a context object, initialized for signing (cannot be NULL)
- *  In/Out: seckey: pointer to a 32-byte secret key
- *  In:    tweak32: pointer to a 32-byte tweak
- */
-SECP256K1_API SECP256K1_WARN_UNUSED_RESULT int secp256k1_xonly_seckey_tweak_add(
-    const secp256k1_context* ctx,
-    unsigned char *seckey,
-    const unsigned char *tweak32
-) SECP256K1_ARG_NONNULL(1) SECP256K1_ARG_NONNULL(2) SECP256K1_ARG_NONNULL(3);
-
 /** Tweak an x-only public key (in place) by adding tweak times the generator to it.
  *
  *  Because the resulting point may have a non-even Y coordinate, it may not
